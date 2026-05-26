@@ -20,29 +20,51 @@ const SKILLS_LIST = [
 ];
 
 // ============================================
-// REAL-TIME SYNC ENGINE (BARU)
+// REAL-TIME SYNC ENGINE v2 - ALL CLEAR
 // ============================================
 const SyncEngine = {
     channel: null,
+    syncInterval: null,
+    lastDataHash: '',
     
     init() {
         // BroadcastChannel untuk sync antar-tab di device yang sama
         if (typeof BroadcastChannel !== 'undefined') {
-            this.channel = new BroadcastChannel('duskveil_sync');
-            this.channel.onmessage = (event) => {
-                const { type, data } = event.data;
-                this.handleSync(type, data);
-            };
+            try {
+                this.channel = new BroadcastChannel('duskveil_sync');
+                this.channel.onmessage = (event) => {
+                    this.handleSync(event.data.type, event.data.data);
+                };
+            } catch(e) {
+                console.log('BroadcastChannel not available');
+            }
         }
         
-        // Polling untuk deteksi perubahan dari tab lain (fallback)
-        this.startPolling();
-        
-        // Event listener untuk storage changes (cross-tab)
+        // Storage events untuk cross-tab
         window.addEventListener('storage', (e) => {
-            if (e.key === 'duskveil_db' || e.key === 'duskveil_commands' || e.key === 'duskveil_purchases') {
+            if (e.key === 'duskveil_db' || e.key === 'duskveil_commands' || 
+                e.key === 'duskveil_purchases' || e.key === 'duskveil_online_users') {
                 this.handleSync('storage_change', { key: e.key });
             }
+        });
+        
+        // Polling setiap 1.5 detik untuk deteksi perubahan
+        this.startPolling();
+        
+        // Track online users
+        this.trackOnline();
+    },
+    
+    getDataHash() {
+        const users = DB.getUsers();
+        const commands = CommandQueue.getAll();
+        const purchases = PurchaseLog.getAll();
+        return JSON.stringify({
+            userCount: users.length,
+            users: users.map(u => ({ username: u.username, coin: u.coin, role: u.role })),
+            cmdCount: commands.length,
+            cmdPending: commands.filter(c => c.status === 'pending').length,
+            purchaseCount: purchases.length
         });
     },
     
@@ -51,33 +73,42 @@ const SyncEngine = {
         if (!session) return;
         const user = JSON.parse(session);
         
-        // Update UI real-time untuk admin
+        // Admin panel auto-refresh
         if (user.role === 'admin') {
-            if (type === 'user_login' || type === 'user_register' || type === 'storage_change') {
+            const adminDash = document.getElementById('admin-dashboard');
+            const isAdminVisible = adminDash && !adminDash.classList.contains('hidden');
+            
+            if (type === 'user_login' || type === 'user_register' || type === 'storage_change' || type === 'online_update') {
+                // Selalu refresh tabel dan stats
                 ui.renderAdminTable();
                 ui.updateStats();
                 ui.updateAdminBadge();
+                ui.renderOnlineUsers();
                 
-                // Notifikasi admin kalau ada user baru login
-                if (type === 'user_login' && data && data.username) {
-                    ui.toast(`🔔 User "${data.username}" baru saja login!`, 'info');
+                // Notifikasi toast
+                if (type === 'user_login' && data && data.username && data.username !== user.username) {
+                    ui.toast(`🔔 "${data.username}" baru saja login!`, 'info');
                 }
                 if (type === 'user_register' && data && data.username) {
-                    ui.toast(`🎉 Member baru "${data.username}" berhasil mendaftar!`, 'success');
+                    ui.toast(`🎉 Member baru "${data.username}" mendaftar!`, 'success');
                 }
             }
+            
             if (type === 'purchase' && data) {
                 ui.renderPurchaseLog();
                 ui.updateStats();
-                ui.toast(`💰 Pembelian baru: ${data.itemName} oleh ${data.username}`, 'info');
+                if (data.username !== user.username) {
+                    ui.toast(`💰 ${data.username} membeli ${data.itemName}`, 'info');
+                }
             }
+            
             if (type === 'command_added') {
                 ui.renderCommandTable();
                 ui.updateAdminBadge();
             }
         }
         
-        // Update coin untuk user biasa kalau di-update admin
+        // User biasa - update coin kalau diubah admin
         if (user.role === 'member' && type === 'coin_updated' && data.username === user.username) {
             const freshUser = DB.getUser(user.username);
             if (freshUser) {
@@ -85,56 +116,86 @@ const SyncEngine = {
                 sessionStorage.setItem('duskveil_session', JSON.stringify(newSession));
                 ui.updateHeader();
                 if (data.byAdmin) {
-                    ui.toast(`💰 Saldo koin Anda diperbarui admin menjadi ${freshUser.coin.toLocaleString()}!`, 'success');
+                    ui.toast(`💰 Saldo diperbarui admin: ${freshUser.coin.toLocaleString()} koin!`, 'success');
                 }
             }
         }
     },
     
     broadcast(type, data) {
-        // Kirim ke BroadcastChannel
+        const payload = { type, data, timestamp: Date.now() };
+        
+        // BroadcastChannel
         if (this.channel) {
-            this.channel.postMessage({ type, data, timestamp: Date.now() });
+            try {
+                this.channel.postMessage(payload);
+            } catch(e) {}
         }
         
-        // Trigger storage event untuk cross-tab
-        // Dengan mengupdate localStorage dengan timestamp unik
+        // Trigger storage event dengan timestamp unik
         localStorage.setItem('duskveil_last_sync', Date.now().toString());
     },
     
-    startPolling() {
-        // Polling setiap 2 detik untuk deteksi perubahan
-        // Berguna untuk device yang tidak support BroadcastChannel
-        let lastSync = localStorage.getItem('duskveil_last_sync') || '0';
+    trackOnline() {
+        // Update online status setiap 10 detik
+        const updateOnline = () => {
+            const session = sessionStorage.getItem('duskveil_session');
+            if (session) {
+                const user = JSON.parse(session);
+                let onlineUsers = JSON.parse(localStorage.getItem('duskveil_online_users') || '[]');
+                
+                // Hapus entry user ini yang lama
+                onlineUsers = onlineUsers.filter(u => u.username !== user.username);
+                
+                // Tambah entry baru
+                onlineUsers.push({
+                    username: user.username,
+                    role: user.role,
+                    lastSeen: Date.now()
+                });
+                
+                // Bersihkan user yang offline > 30 detik
+                const now = Date.now();
+                onlineUsers = onlineUsers.filter(u => (now - u.lastSeen) < 30000);
+                
+                localStorage.setItem('duskveil_online_users', JSON.stringify(onlineUsers));
+                this.broadcast('online_update', { count: onlineUsers.length });
+            }
+        };
         
-        setInterval(() => {
-            const currentSync = localStorage.getItem('duskveil_last_sync') || '0';
-            if (currentSync !== lastSync) {
-                lastSync = currentSync;
+        updateOnline();
+        setInterval(updateOnline, 10000);
+        
+        // Cleanup saat tab ditutup
+        window.addEventListener('beforeunload', () => {
+            const session = sessionStorage.getItem('duskveil_session');
+            if (session) {
+                const user = JSON.parse(session);
+                let onlineUsers = JSON.parse(localStorage.getItem('duskveil_online_users') || '[]');
+                onlineUsers = onlineUsers.filter(u => u.username !== user.username);
+                localStorage.setItem('duskveil_online_users', JSON.stringify(onlineUsers));
+            }
+        });
+    },
+    
+    startPolling() {
+        // Polling setiap 1.5 detik
+        this.syncInterval = setInterval(() => {
+            const currentHash = this.getDataHash();
+            if (currentHash !== this.lastDataHash) {
+                this.lastDataHash = currentHash;
                 this.handleSync('storage_change', {});
             }
             
-            // Update stats real-time untuk admin panel
+            // Update online users display
             const session = sessionStorage.getItem('duskveil_session');
             if (session) {
                 const user = JSON.parse(session);
                 if (user.role === 'admin') {
-                    // Cek apakah ada user baru yang belum muncul di tabel
-                    const currentUsers = DB.getUsers();
-                    const tableBody = document.getElementById('user-table-body');
-                    if (tableBody) {
-                        const visibleRows = tableBody.querySelectorAll('tr');
-                        if (visibleRows.length !== currentUsers.length && !document.getElementById('admin-dashboard').classList.contains('hidden')) {
-                            ui.renderAdminTable();
-                            ui.updateStats();
-                        }
-                    }
-                    
-                    // Update pending badge real-time
-                    ui.updateAdminBadge();
+                    ui.renderOnlineUsers();
                 }
             }
-        }, 2000);
+        }, 1500);
     }
 };
 
@@ -180,7 +241,7 @@ const Security = {
 };
 
 // ============================================
-// TURNSTILE MANAGER (FIXED)
+// TURNSTILE MANAGER - MOBILE FIX
 // ============================================
 const TurnstileManager = {
     widgetId: null,
@@ -197,22 +258,44 @@ const TurnstileManager = {
         
         container.innerHTML = '';
         
+        // Deteksi mobile
+        const isMobile = window.innerWidth < 768;
+        
         if (window.turnstile) {
-            TurnstileManager.widgetId = window.turnstile.render(container, {
-                sitekey: TurnstileManager.siteKey,
-                callback: (token) => {
-                    app.turnstileToken = token;
-                    console.log(`✅ Turnstile verified for ${tab}`);
-                },
-                'error-callback': () => {
-                    app.turnstileToken = null;
-                    ui.toast('❌ Verifikasi keamanan gagal. Coba lagi.', 'error');
-                },
-                theme: 'dark',
-                size: 'normal'
-            });
+            try {
+                TurnstileManager.widgetId = window.turnstile.render(container, {
+                    sitekey: TurnstileManager.siteKey,
+                    callback: (token) => {
+                        app.turnstileToken = token;
+                        console.log(`✅ Turnstile verified for ${tab}`);
+                    },
+                    'error-callback': () => {
+                        app.turnstileToken = null;
+                        ui.toast('❌ Verifikasi gagal. Coba lagi.', 'error');
+                    },
+                    'expired-callback': () => {
+                        app.turnstileToken = null;
+                        ui.toast('⚠️ Verifikasi expired. Refresh...', 'warning');
+                    },
+                    theme: 'dark',
+                    size: isMobile ? 'compact' : 'normal',
+                    retry: 'auto',
+                    'refresh-expired': 'auto'
+                });
+            } catch(e) {
+                console.error('Turnstile render error:', e);
+                container.innerHTML = '<div style="color:var(--text3);font-size:0.78rem;text-align:center;padding:12px;">❌ Gagal load verifikasi. Refresh halaman.</div>';
+            }
         } else {
-            container.innerHTML = '<div style="color:var(--text3);font-size:0.78rem;text-align:center;padding:12px;">⏳ Memuat verifikasi...</div>';
+            // Fallback: tunggu script load
+            container.innerHTML = '<div style="color:var(--text3);font-size:0.78rem;text-align:center;padding:12px;">⏳ Memuat verifikasi keamanan...</div>';
+            
+            // Coba lagi setelah 2 detik
+            setTimeout(() => {
+                if (window.turnstile && !TurnstileManager.widgetId) {
+                    TurnstileManager.render(tab);
+                }
+            }, 2000);
         }
     },
     
@@ -237,6 +320,14 @@ const TurnstileManager = {
             }
         }
         app.turnstileToken = null;
+    },
+    
+    // Force refresh untuk mobile
+    refreshForMobile: () => {
+        const isMobile = window.innerWidth < 768;
+        if (isMobile && TurnstileManager.widgetId) {
+            TurnstileManager.render(TurnstileManager.currentTab);
+        }
     }
 };
 
@@ -315,7 +406,7 @@ const PterodactylAPI = {
 };
 
 // ============================================
-// COMMAND QUEUE (DENGAN SYNC)
+// COMMAND QUEUE
 // ============================================
 class CommandQueue {
     static getAll() {
@@ -365,7 +456,7 @@ class CommandQueue {
 }
 
 // ============================================
-// PURCHASE LOG (DENGAN SYNC)
+// PURCHASE LOG
 // ============================================
 const PurchaseLog = {
     getAll() {
@@ -388,8 +479,6 @@ const PurchaseLog = {
         };
         all.unshift(entry);
         this.save(all.slice(0, 200));
-        
-        // Broadcast ke admin real-time
         SyncEngine.broadcast('purchase', entry);
     },
     getRecent(n = 50) {
@@ -398,7 +487,7 @@ const PurchaseLog = {
 };
 
 // ============================================
-// DATABASE (ENCRYPTED) - DENGAN SYNC
+// DATABASE (ENCRYPTED)
 // ============================================
 const DB = {
     encrypt: (data) => {
@@ -418,7 +507,6 @@ const DB = {
     },
     save: (data) => {
         localStorage.setItem('duskveil_db', DB.encrypt(data));
-        // Trigger sync untuk update real-time
         localStorage.setItem('duskveil_last_sync', Date.now().toString());
     },
     init: () => {
@@ -450,10 +538,7 @@ const DB = {
         if (user) {
             const token = Security.generateToken();
             const userData = { ...user, token, loginAt: new Date().toISOString() };
-            
-            // Broadcast ke semua tab bahwa user login
             SyncEngine.broadcast('user_login', { username: u, role: user.role, timestamp: Date.now() });
-            
             return { success: true, user: userData };
         }
         return { success: false, message: 'Username atau password salah.' };
@@ -479,9 +564,7 @@ const DB = {
         data.users.push(newUser);
         DB.save(data);
         
-        // Broadcast ke semua tab bahwa user baru terdaftar
         SyncEngine.broadcast('user_register', { username: u, timestamp: Date.now() });
-        
         return { success: true };
     },
     updateUserCoin: (username, newCoin) => {
@@ -491,7 +574,6 @@ const DB = {
             data.users[idx].coin = Math.max(0, parseInt(newCoin) || 0);
             DB.save(data);
             
-            // Broadcast update coin ke user yang bersangkutan
             SyncEngine.broadcast('coin_updated', { 
                 username, 
                 coin: data.users[idx].coin,
@@ -532,7 +614,7 @@ async function processCommands(commands, username, itemName, price) {
         console.warn('Auto-execute gagal:', results[failedIdx]?.error);
         cmdArray.forEach(cmd => CommandQueue.add(cmd, username, itemName, false));
         PurchaseLog.add(username, itemName, price, cmdArray, false);
-        ui.toast(`⚠️ Auto-execute gagal. Command disimpan di Queue — paste manual di console server.`, 'error');
+        ui.toast(`⚠️ Auto-execute gagal. Command disimpan di Queue.`, 'error');
     }
 
     ui.updateAdminBadge();
@@ -547,6 +629,7 @@ async function processCommands(commands, username, itemName, price) {
 const ui = {
     toast: (msg, type = 'success') => {
         const box = document.getElementById('toast-box');
+        if (!box) return;
         const div = document.createElement('div');
         div.className = `toast ${type}`;
         div.innerHTML = `<span>${Security.sanitize(msg)}</span><span style="cursor:pointer;font-size:1.1rem;opacity:.6" onclick="this.parentElement.remove()">×</span>`;
@@ -565,7 +648,8 @@ const ui = {
             lf.classList.add('hidden'); rf.classList.remove('hidden');
             btns[0].classList.remove('active'); btns[1].classList.add('active');
         }
-        TurnstileManager.render(tab);
+        // Delay render Turnstile agar DOM siap
+        setTimeout(() => TurnstileManager.render(tab), 100);
     },
 
     renderStore: () => {
@@ -621,18 +705,57 @@ const ui = {
         const tbody = document.getElementById('user-table-body');
         if (!tbody) return;
         const users = DB.getUsers();
+        const onlineUsers = JSON.parse(localStorage.getItem('duskveil_online_users') || '[]');
+        const now = Date.now();
+        
         if (users.length === 0) {
             tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);">📭 Tidak ada member</td></tr>';
             return;
         }
-        tbody.innerHTML = users.map(u => `
+        
+        tbody.innerHTML = users.map(u => {
+            const isOnline = onlineUsers.some(o => o.username === u.username && (now - o.lastSeen) < 30000);
+            const onlineIndicator = isOnline ? '<span style="color:#10b981;font-size:0.7rem;">● ONLINE</span>' : '<span style="color:var(--text3);font-size:0.7rem;">○ OFFLINE</span>';
+            
+            return `
             <tr>
-                <td>${Security.sanitize(u.username)}</td>
+                <td>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <div style="width:8px;height:8px;border-radius:50%;background:${isOnline ? '#10b981' : 'var(--text3)'};box-shadow:${isOnline ? '0 0 8px #10b981' : 'none'};"></div>
+                        <div>
+                            <div style="font-weight:600;">${Security.sanitize(u.username)}</div>
+                            <div>${onlineIndicator}</div>
+                        </div>
+                    </div>
+                </td>
                 <td><span class="status-badge ${u.role === 'admin' ? 'status-admin' : 'status-member'}">${u.role.toUpperCase()}</span></td>
                 <td style="color:var(--gold);">${(u.coin || 0).toLocaleString()}</td>
                 <td style="font-size:0.78rem;color:var(--text3);">${u.createdAt ? new Date(u.createdAt).toLocaleDateString('id-ID') : '-'}</td>
                 <td><button class="btn-tbl-edit" onclick="app.fillAdmin('${u.username}',${u.coin || 0})">Edit</button></td>
-            </tr>`).join('');
+            </tr>`;
+        }).join('');
+    },
+    
+    renderOnlineUsers: () => {
+        const container = document.getElementById('online-users-list');
+        if (!container) return;
+        
+        const onlineUsers = JSON.parse(localStorage.getItem('duskveil_online_users') || '[]');
+        const now = Date.now();
+        const activeUsers = onlineUsers.filter(u => (now - u.lastSeen) < 30000);
+        
+        if (activeUsers.length === 0) {
+            container.innerHTML = '<div style="color:var(--text3);font-size:0.85rem;">Tidak ada user online</div>';
+            return;
+        }
+        
+        container.innerHTML = activeUsers.map(u => `
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg2);border-radius:6px;margin:2px 0;">
+                <div style="width:8px;height:8px;border-radius:50%;background:#10b981;box-shadow:0 0 6px #10b981;"></div>
+                <span style="font-weight:500;font-size:0.85rem;">${Security.sanitize(u.username)}</span>
+                <span style="font-size:0.7rem;color:var(--text3);margin-left:auto;">${u.role === 'admin' ? '👑 Admin' : '👤 Member'}</span>
+            </div>
+        `).join('');
     },
 
     renderPurchaseLog: () => {
@@ -691,16 +814,21 @@ const ui = {
         const totalCoins = users.reduce((sum, u) => sum + (u.coin || 0), 0);
         const purchases = PurchaseLog.getAll();
         const pending = CommandQueue.getPending();
+        const onlineUsers = JSON.parse(localStorage.getItem('duskveil_online_users') || '[]');
+        const now = Date.now();
+        const activeCount = onlineUsers.filter(u => (now - u.lastSeen) < 30000).length;
 
         const statUsers = document.getElementById('stat-total-users');
         const statCoins = document.getElementById('stat-total-coins');
         const statPurchases = document.getElementById('stat-total-purchases');
         const statPending = document.getElementById('stat-pending-commands');
+        const statOnline = document.getElementById('stat-online-users');
 
         if (statUsers) statUsers.textContent = users.length.toLocaleString();
         if (statCoins) statCoins.textContent = totalCoins.toLocaleString();
         if (statPurchases) statPurchases.textContent = purchases.length.toLocaleString();
         if (statPending) statPending.textContent = pending.length.toLocaleString();
+        if (statOnline) statOnline.textContent = activeCount.toLocaleString();
     },
 
     updateAdminBadge: () => {
@@ -733,6 +861,7 @@ const ui = {
         document.getElementById('purchase-panel').classList.add('hidden');
         document.getElementById('admin-dashboard').classList.remove('hidden');
         ui.renderAdminTable();
+        ui.renderOnlineUsers();
         ui.updateStats();
     },
 
@@ -769,7 +898,8 @@ const ui = {
             if (adminDash) adminDash.classList.add('hidden');
             document.getElementById('command-panel')?.classList.add('hidden');
             document.getElementById('purchase-panel')?.classList.add('hidden');
-            setTimeout(() => TurnstileManager.render('login'), 100);
+            // Render Turnstile setelah DOM siap
+            setTimeout(() => TurnstileManager.render('login'), 200);
         } else {
             auth.classList.add('hidden');
             nav.classList.remove('hidden');
@@ -822,9 +952,7 @@ const app = {
     turnstileToken: null,
 
     init: () => {
-        // Init sync engine dulu
         SyncEngine.init();
-        
         DB.init();
         ui.renderStore();
         
@@ -851,6 +979,11 @@ const app = {
         }
 
         app.initParticles();
+        
+        // Handle resize untuk mobile Turnstile
+        window.addEventListener('resize', () => {
+            TurnstileManager.refreshForMobile();
+        });
     },
 
     initParticles: () => {
@@ -878,6 +1011,8 @@ const app = {
 
         if (!app.turnstileToken) {
             ui.toast('⚠️ Harap selesaikan verifikasi keamanan terlebih dahulu!', 'error');
+            // Re-render Turnstile kalau belum muncul
+            TurnstileManager.render('login');
             return;
         }
 
@@ -914,6 +1049,7 @@ const app = {
 
         if (!app.turnstileToken) {
             ui.toast('⚠️ Harap selesaikan verifikasi keamanan terlebih dahulu!', 'error');
+            TurnstileManager.render('register');
             return;
         }
 
@@ -953,7 +1089,6 @@ const app = {
         ui.toast('Anda telah keluar.');
         app.turnstileToken = null;
         
-        // Broadcast logout ke admin
         if (user) {
             SyncEngine.broadcast('user_logout', { username: user.username, timestamp: Date.now() });
         }
@@ -1039,7 +1174,7 @@ const app = {
     copyAndExecute: async (id, command) => {
         await navigator.clipboard.writeText(command);
         ui.toast('✅ Command di-copy ke clipboard!');
-        if (confirm('Apakah command sudah dijalankan di server?\n\nOK = sudah, Cancel = belum')) {
+        if (confirm('Apakah command sudah dijalankan di server?\\n\\nOK = sudah, Cancel = belum')) {
             CommandQueue.markExecuted(id);
             ui.renderCommandTable();
             ui.updateAdminBadge();
@@ -1084,7 +1219,7 @@ const app = {
                 });
                 const allCmds = pending.map(c => c.command).join('\\n');
                 navigator.clipboard.writeText(allCmds);
-                ui.toast(`⚠️ Sebagian command gagal. Semua command di-copy ke clipboard — paste manual!`, 'error');
+                ui.toast(`⚠️ Sebagian command gagal. Semua command di-copy ke clipboard!`, 'error');
             }
             ui.renderCommandTable();
             ui.updateAdminBadge();
@@ -1137,11 +1272,12 @@ const app = {
     },
 
     clearAllData: () => {
-        if (!confirm('⚠️ PERINGATAN: Ini akan menghapus SEMUA data (member, pembelian, command)!\\n\\nYakin ingin melanjutkan?')) return;
+        if (!confirm('⚠️ PERINGATAN: Ini akan menghapus SEMUA data!\\n\\nYakin ingin melanjutkan?')) return;
         if (!confirm('Konfirmasi terakhir: Semua data akan HILANG PERMANEN. Lanjutkan?')) return;
         localStorage.removeItem('duskveil_db');
         localStorage.removeItem('duskveil_commands');
         localStorage.removeItem('duskveil_purchases');
+        localStorage.removeItem('duskveil_online_users');
         DB.init();
         ui.renderAdminTable();
         ui.updateStats();
@@ -1173,4 +1309,3 @@ const app = {
 };
 
 window.addEventListener('DOMContentLoaded', () => app.init());
-
