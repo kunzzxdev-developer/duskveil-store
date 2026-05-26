@@ -5,7 +5,7 @@ const API_CONFIG = {
 };
 
 const ADMIN_CONFIG = {
-    username: '17122009',
+    username: 'admin',
     password: 'duskg@nt3ng303#'
 };
 
