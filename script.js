@@ -4,21 +4,19 @@ const API_CONFIG = {
     panelUrl: 'https://panel.arqonara.com'
 };
 
-// --- KONFIGURASI ADMIN ---
 const ADMIN_CONFIG = {
     username: '17122009',
     password: 'duskg@nt3ng303#'
 };
 
-// --- DAFTAR SKILL ---
 const SKILLS_LIST = [
-    { name: 'Penambangan',      id: 'mining' },
-    { name: 'Pertanian',        id: 'farming' },
-    { name: 'Pertarungan',      id: 'combat' },
-    { name: 'Pemanenan Kayu',   id: 'woodcutting' },
-    { name: 'Memancing',        id: 'fishing' },
-    { name: 'Bertahan Hidup',   id: 'survival' },
-    { name: 'Sihir',            id: 'magic' }
+    { name: 'Penambangan', id: 'mining' },
+    { name: 'Pertanian', id: 'farming' },
+    { name: 'Pertarungan', id: 'combat' },
+    { name: 'Pemanenan Kayu', id: 'woodcutting' },
+    { name: 'Memancing', id: 'fishing' },
+    { name: 'Bertahan Hidup', id: 'survival' },
+    { name: 'Sihir', id: 'magic' }
 ];
 
 // ============================================
@@ -59,6 +57,71 @@ const Security = {
         return Array.from(crypto.getRandomValues(new Uint8Array(32)))
             .map(b => b.toString(16).padStart(2, '0'))
             .join('');
+    }
+};
+
+// ============================================
+// TURNSTILE MANAGER (FIXED)
+// ============================================
+const TurnstileManager = {
+    widgetId: null,
+    currentTab: 'login',
+    siteKey: '0x4AAAAAADWhIdBmcN5kZHEQ',
+    
+    render: (tab) => {
+        // Hapus widget lama
+        TurnstileManager.remove();
+        TurnstileManager.currentTab = tab;
+        
+        const containerId = tab === 'login' ? 'turnstile-login' : 'turnstile-register';
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        
+        // Bersihkan container
+        container.innerHTML = '';
+        
+        // Render widget baru
+        if (window.turnstile) {
+            TurnstileManager.widgetId = window.turnstile.render(container, {
+                sitekey: TurnstileManager.siteKey,
+                callback: (token) => {
+                    app.turnstileToken = token;
+                    console.log(`✅ Turnstile verified for ${tab}`);
+                },
+                'error-callback': () => {
+                    app.turnstileToken = null;
+                    ui.toast('❌ Verifikasi keamanan gagal. Coba lagi.', 'error');
+                },
+                theme: 'dark',
+                size: 'normal'
+            });
+        } else {
+            // Fallback: kalau script Turnstile belum load
+            container.innerHTML = '<div style="color:var(--text3);font-size:0.78rem;text-align:center;padding:12px;">⏳ Memuat verifikasi...</div>';
+        }
+    },
+    
+    remove: () => {
+        if (TurnstileManager.widgetId && window.turnstile) {
+            try {
+                window.turnstile.remove(TurnstileManager.widgetId);
+            } catch(e) {
+                console.log('Turnstile remove error:', e);
+            }
+            TurnstileManager.widgetId = null;
+        }
+        app.turnstileToken = null;
+    },
+    
+    reset: () => {
+        if (TurnstileManager.widgetId && window.turnstile) {
+            try {
+                window.turnstile.reset(TurnstileManager.widgetId);
+            } catch(e) {
+                console.log('Turnstile reset error:', e);
+            }
+        }
+        app.turnstileToken = null;
     }
 };
 
@@ -360,36 +423,36 @@ const ui = {
             lf.classList.add('hidden'); rf.classList.remove('hidden');
             btns[0].classList.remove('active'); btns[1].classList.add('active');
         }
-        // Reset Turnstile saat switch tab
-        app.resetTurnstile();
+        // Render Turnstile untuk tab yang aktif
+        TurnstileManager.render(tab);
     },
 
     renderStore: () => {
         const products = {
             kontrak: [
-                { name: 'Basic Contract',    price: 10000, smallName: 'basic' },
-                { name: 'Premium Contract',  price: 35000, smallName: 'premium' },
+                { name: 'Basic Contract', price: 10000, smallName: 'basic' },
+                { name: 'Premium Contract', price: 35000, smallName: 'premium' },
                 { name: 'Duskveil Contract', price: 55000, smallName: 'duskveil' },
-                { name: 'Mythic Contract',   price: 75000, smallName: 'mythic' }
+                { name: 'Mythic Contract', price: 75000, smallName: 'mythic' }
             ],
             rank: [
-                { name: 'Prime',    price: 5000,  rankName: 'prime' },
-                { name: 'King',     price: 15000, rankName: 'king' },
+                { name: 'Prime', price: 5000, rankName: 'prime' },
+                { name: 'King', price: 15000, rankName: 'king' },
                 { name: 'Immortal', price: 25000, rankName: 'immortal' },
-                { name: 'Eternal',  price: 35000, rankName: 'eternal' },
-                { name: 'Abyss',    price: 45000, rankName: 'abyss' }
+                { name: 'Eternal', price: 35000, rankName: 'eternal' },
+                { name: 'Abyss', price: 45000, rankName: 'abyss' }
             ],
             skill: [
-                { name: 'Upgrade Skill',  price: 15000,  type: 'single' },
+                { name: 'Upgrade Skill', price: 15000, type: 'single' },
                 { name: 'All Skills Max', price: 100000, type: 'all' }
             ]
         };
 
         const createCard = (cat, item) => {
             let onclick = '';
-            if (cat === 'skill')   onclick = item.type === 'single' ? `app.showSkillSelection(${item.price})` : `app.buyAllSkills(${item.price})`;
+            if (cat === 'skill') onclick = item.type === 'single' ? `app.showSkillSelection(${item.price})` : `app.buyAllSkills(${item.price})`;
             if (cat === 'kontrak') onclick = `app.buyBook('${item.name}',${item.price},'${item.smallName}')`;
-            if (cat === 'rank')    onclick = `app.buyRank('${item.name}',${item.price},'${item.rankName}')`;
+            if (cat === 'rank') onclick = `app.buyRank('${item.name}',${item.price},'${item.rankName}')`;
             const icon = cat === 'kontrak' ? '📜' : cat === 'rank' ? '👑' : '⚔️';
             const type = cat === 'kontrak' ? 'Buku Kontrak' : cat === 'rank' ? 'Rank Server' : 'Skill';
             return `
@@ -443,13 +506,13 @@ const ui = {
 
         tbody.innerHTML = purchases.map(p => {
             const statusClass = p.autoExecuted ? 'status-executed' : 'status-pending';
-            const statusText  = p.autoExecuted ? '✅ Auto-sent' : '⏳ Manual Queue';
+            const statusText = p.autoExecuted ? '✅ Auto-sent' : '⏳ Manual Queue';
             const cmdsHtml = p.commands.map(c => `<code style="display:block;font-size:0.72rem;background:var(--bg2);padding:2px 6px;border-radius:3px;margin:2px 0;color:var(--primary3);">${Security.sanitize(c)}</code>`).join('');
             return `
                 <tr>
                     <td style="font-size:0.78rem;color:var(--text3);">${new Date(p.timestamp).toLocaleString('id-ID')}</td>
                     <td style="font-weight:600;">${Security.sanitize(p.username)}</td>
-                    <td>${Security.sanitize(p.itemName)}<div style="margin-top:4px;">${cmdsHtml}</div></td>
+                    <td>${Security.sanitize(p.itemName)}<<div style="margin-top:4px;">${cmdsHtml}</div></td>
                     <td style="color:var(--gold);font-weight:700;">${(p.price || 0).toLocaleString()}</td>
                     <td><span class="command-status ${statusClass}">${statusText}</span></td>
                 </tr>`;
@@ -553,9 +616,9 @@ const ui = {
     },
 
     showPage: (page) => {
-        const auth  = document.getElementById('auth-section');
+        const auth = document.getElementById('auth-section');
         const store = document.getElementById('store-section');
-        const nav   = document.getElementById('navbar');
+        const nav = document.getElementById('navbar');
         const adminDash = document.getElementById('admin-dashboard');
         
         if (page === 'auth') {
@@ -565,6 +628,8 @@ const ui = {
             if (adminDash) adminDash.classList.add('hidden');
             document.getElementById('command-panel')?.classList.add('hidden');
             document.getElementById('purchase-panel')?.classList.add('hidden');
+            // Render Turnstile untuk tab login saat kembali ke auth
+            setTimeout(() => TurnstileManager.render('login'), 100);
         } else {
             auth.classList.add('hidden');
             nav.classList.remove('hidden');
@@ -615,26 +680,6 @@ const ui = {
 // ============================================
 const app = {
     turnstileToken: null,
-
-    // Callback saat Turnstile berhasil verifikasi
-    onTurnstileSuccess: (token) => {
-        app.turnstileToken = token;
-        console.log('✅ Turnstile verified');
-    },
-
-    // Callback saat Turnstile error
-    onTurnstileError: () => {
-        app.turnstileToken = null;
-        ui.toast('❌ Verifikasi keamanan gagal. Coba refresh halaman.', 'error');
-    },
-
-    // Reset Turnstile widget
-    resetTurnstile: () => {
-        app.turnstileToken = null;
-        if (window.turnstile) {
-            window.turnstile.reset();
-        }
-    },
 
     init: () => {
         DB.init();
@@ -689,7 +734,7 @@ const app = {
         }
 
         if (!app.turnstileToken) {
-            ui.toast('⚠️ Harap centang "Saya bukan robot" terlebih dahulu!', 'error');
+            ui.toast('⚠️ Harap selesaikan verifikasi keamanan terlebih dahulu!', 'error');
             return;
         }
 
@@ -709,10 +754,10 @@ const app = {
             ui.showPage('store');
             document.getElementById('login-user').value = '';
             document.getElementById('login-pass').value = '';
-            app.resetTurnstile();
+            app.turnstileToken = null;
         } else {
             ui.toast(res.message, 'error');
-            app.resetTurnstile();
+            TurnstileManager.reset();
         }
     },
 
@@ -725,7 +770,7 @@ const app = {
         }
 
         if (!app.turnstileToken) {
-            ui.toast('⚠️ Harap centang "Saya bukan robot" terlebih dahulu!', 'error');
+            ui.toast('⚠️ Harap selesaikan verifikasi keamanan terlebih dahulu!', 'error');
             return;
         }
 
@@ -751,10 +796,10 @@ const app = {
             document.getElementById('reg-user').value = '';
             document.getElementById('reg-pass').value = '';
             document.getElementById('reg-pass-confirm').value = '';
-            app.resetTurnstile();
+            app.turnstileToken = null;
         } else {
             ui.toast(res.message, 'error');
-            app.resetTurnstile();
+            TurnstileManager.reset();
         }
     },
 
@@ -845,7 +890,7 @@ const app = {
     copyAndExecute: async (id, command) => {
         await navigator.clipboard.writeText(command);
         ui.toast('✅ Command di-copy ke clipboard!');
-        if (confirm('Apakah command sudah dijalankan di server?\\n\\nOK = sudah, Cancel = belum')) {
+        if (confirm('Apakah command sudah dijalankan di server?\n\nOK = sudah, Cancel = belum')) {
             CommandQueue.markExecuted(id);
             ui.renderCommandTable();
             ui.updateAdminBadge();
@@ -888,7 +933,7 @@ const app = {
                         }
                     }
                 });
-                const allCmds = pending.map(c => c.command).join('\\n');
+                const allCmds = pending.map(c => c.command).join('\n');
                 navigator.clipboard.writeText(allCmds);
                 ui.toast(`⚠️ Sebagian command gagal. Semua command di-copy ke clipboard — paste manual!`, 'error');
             }
@@ -901,7 +946,7 @@ const app = {
     copyAllCommands: async () => {
         const pending = CommandQueue.getPending();
         if (pending.length === 0) { ui.toast('📭 Tidak ada command pending!', 'error'); return; }
-        const allCmds = pending.map(c => c.command).join('\\n');
+        const allCmds = pending.map(c => c.command).join('\n');
         await navigator.clipboard.writeText(allCmds);
         ui.toast(`✅ ${pending.length} command di-copy ke clipboard!`);
     },
@@ -943,7 +988,7 @@ const app = {
     },
 
     clearAllData: () => {
-        if (!confirm('⚠️ PERINGATAN: Ini akan menghapus SEMUA data (member, pembelian, command)!\\n\\nYakin ingin melanjutkan?')) return;
+        if (!confirm('⚠️ PERINGATAN: Ini akan menghapus SEMUA data (member, pembelian, command)!\n\nYakin ingin melanjutkan?')) return;
         if (!confirm('Konfirmasi terakhir: Semua data akan HILANG PERMANEN. Lanjutkan?')) return;
         localStorage.removeItem('duskveil_db');
         localStorage.removeItem('duskveil_commands');
