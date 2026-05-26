@@ -243,6 +243,29 @@
                             <div class="stat-label">Command Pending</div>
                         </div>
                     </div>
+                    <div class="stat-card" style="background: linear-gradient(135deg, #05966920, #10b98120); border-color: #10b981;">
+                        <div class="stat-icon">🟢</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="stat-online-users" style="color: #10b981;">0</div>
+                            <div class="stat-label">User Online</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Online Users Panel -->
+                <div class="panel-container">
+                    <div class="panel-header">
+                        <div class="panel-header-left">
+                            <span class="panel-icon">🟢</span>
+                            <div>
+                                <h2>User Online Sekarang</h2>
+                                <span class="panel-sub">Member yang sedang aktif di website</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="online-users-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;padding:16px;">
+                        <div style="color:var(--text3);font-size:0.85rem;">Memuat...</div>
+                    </div>
                 </div>
 
                 <!-- Quick Actions -->
