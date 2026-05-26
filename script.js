@@ -20,7 +20,153 @@ const SKILLS_LIST = [
 ];
 
 // ============================================
-// REAL-TIME SYNC ENGINE v2 - ALL CLEAR
+// TURNSTILE MANAGER - FIXED FOR ALL DEVICES
+// ============================================
+const TurnstileManager = {
+    widgetId: null,
+    currentTab: 'login',
+    siteKey: '0x4AAAAAADWhIdBmcN5kZHEQ',
+    isReady: false,
+    
+    init() {
+        // Tunggu Turnstile script load
+        if (window.turnstile) {
+            this.isReady = true;
+            console.log('✅ Turnstile ready');
+        } else {
+            // Poll sampai ready
+            const checkInterval = setInterval(() => {
+                if (window.turnstile) {
+                    this.isReady = true;
+                    clearInterval(checkInterval);
+                    console.log('✅ Turnstile ready (delayed)');
+                    // Render widget untuk tab aktif
+                    this.render(this.currentTab);
+                }
+            }, 500);
+            
+            // Timeout 10 detik
+            setTimeout(() => {
+                if (!this.isReady) {
+                    clearInterval(checkInterval);
+                    console.error('❌ Turnstile failed to load');
+                    this.showFallback();
+                }
+            }, 10000);
+        }
+    },
+    
+    render(tab) {
+        this.currentTab = tab;
+        
+        // Hapus widget lama
+        this.remove();
+        
+        const containerId = tab === 'login' ? 'turnstile-login' : 'turnstile-register';
+        const container = document.getElementById(containerId);
+        
+        if (!container) {
+            console.error('Container not found:', containerId);
+            return;
+        }
+        
+        // Bersihkan container
+        container.innerHTML = '';
+        
+        if (!this.isReady || !window.turnstile) {
+            container.innerHTML = `
+                <div style="text-align:center;padding:16px;background:var(--bg2);border-radius:8px;border:1px solid var(--border);">
+                    <div style="color:var(--text3);font-size:0.85rem;margin-bottom:8px;">⏳ Memuat verifikasi keamanan...</div>
+                    <button type="button" onclick="TurnstileManager.forceRender('${tab}')" style="padding:8px 16px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.8rem;">
+                        🔄 Refresh Verifikasi
+                    </button>
+                </div>`;
+            return;
+        }
+        
+        // Deteksi mobile
+        const isMobile = window.innerWidth < 768 || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        
+        try {
+            this.widgetId = window.turnstile.render(container, {
+                sitekey: this.siteKey,
+                callback: (token) => {
+                    app.turnstileToken = token;
+                    console.log('✅ Turnstile verified:', token.substring(0, 20) + '...');
+                },
+                'error-callback': () => {
+                    app.turnstileToken = null;
+                    ui.toast('❌ Verifikasi gagal. Coba lagi.', 'error');
+                },
+                'expired-callback': () => {
+                    app.turnstileToken = null;
+                    ui.toast('⚠️ Verifikasi expired. Refresh...', 'warning');
+                },
+                theme: 'dark',
+                size: isMobile ? 'compact' : 'normal',
+                retry: 'auto',
+                'refresh-expired': 'auto',
+                language: 'id'
+            });
+            console.log('✅ Turnstile rendered, widgetId:', this.widgetId);
+        } catch(e) {
+            console.error('❌ Turnstile render error:', e);
+            container.innerHTML = `
+                <div style="text-align:center;padding:16px;background:var(--bg2);border-radius:8px;border:1px solid var(--border);">
+                    <div style="color:#ef4444;font-size:0.85rem;margin-bottom:8px;">❌ Gagal load verifikasi</div>
+                    <button type="button" onclick="TurnstileManager.forceRender('${tab}')" style="padding:8px 16px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.8rem;">
+                        🔄 Coba Lagi
+                    </button>
+                </div>`;
+        }
+    },
+    
+    forceRender(tab) {
+        this.isReady = !!window.turnstile;
+        this.render(tab);
+    },
+    
+    remove() {
+        if (this.widgetId && window.turnstile) {
+            try {
+                window.turnstile.remove(this.widgetId);
+                console.log('Turnstile removed');
+            } catch(e) {
+                console.log('Turnstile remove error:', e);
+            }
+            this.widgetId = null;
+        }
+        app.turnstileToken = null;
+    },
+    
+    reset() {
+        if (this.widgetId && window.turnstile) {
+            try {
+                window.turnstile.reset(this.widgetId);
+            } catch(e) {
+                console.log('Turnstile reset error:', e);
+            }
+        }
+        app.turnstileToken = null;
+    },
+    
+    showFallback() {
+        const containers = ['turnstile-login', 'turnstile-register'];
+        containers.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.innerHTML = `
+                    <div style="text-align:center;padding:16px;background:var(--bg2);border-radius:8px;border:1px solid var(--border);">
+                        <div style="color:#ef4444;font-size:0.85rem;margin-bottom:8px;">⚠️ Verifikasi tidak tersedia</div>
+                        <div style="color:var(--text3);font-size:0.75rem;">Refresh halaman atau coba browser lain</div>
+                    </div>`;
+            }
+        });
+    }
+};
+
+// ============================================
+// CROSS-DEVICE SYNC ENGINE
 // ============================================
 const SyncEngine = {
     channel: null,
@@ -28,30 +174,25 @@ const SyncEngine = {
     lastDataHash: '',
     
     init() {
-        // BroadcastChannel untuk sync antar-tab di device yang sama
+        // BroadcastChannel untuk sync antar-tab
         if (typeof BroadcastChannel !== 'undefined') {
             try {
                 this.channel = new BroadcastChannel('duskveil_sync');
                 this.channel.onmessage = (event) => {
                     this.handleSync(event.data.type, event.data.data);
                 };
-            } catch(e) {
-                console.log('BroadcastChannel not available');
-            }
+            } catch(e) {}
         }
         
-        // Storage events untuk cross-tab
+        // Storage events
         window.addEventListener('storage', (e) => {
-            if (e.key === 'duskveil_db' || e.key === 'duskveil_commands' || 
-                e.key === 'duskveil_purchases' || e.key === 'duskveil_online_users') {
+            if (['duskveil_db','duskveil_commands','duskveil_purchases','duskveil_online_users'].includes(e.key)) {
                 this.handleSync('storage_change', { key: e.key });
             }
         });
         
-        // Polling setiap 1.5 detik untuk deteksi perubahan
+        // Polling setiap 1 detik
         this.startPolling();
-        
-        // Track online users
         this.trackOnline();
     },
     
@@ -61,7 +202,7 @@ const SyncEngine = {
         const purchases = PurchaseLog.getAll();
         return JSON.stringify({
             userCount: users.length,
-            users: users.map(u => ({ username: u.username, coin: u.coin, role: u.role })),
+            userNames: users.map(u => u.username).sort().join(','),
             cmdCount: commands.length,
             cmdPending: commands.filter(c => c.status === 'pending').length,
             purchaseCount: purchases.length
@@ -73,50 +214,31 @@ const SyncEngine = {
         if (!session) return;
         const user = JSON.parse(session);
         
-        // Admin panel auto-refresh
         if (user.role === 'admin') {
-            const adminDash = document.getElementById('admin-dashboard');
-            const isAdminVisible = adminDash && !adminDash.classList.contains('hidden');
+            ui.renderAdminTable();
+            ui.updateStats();
+            ui.updateAdminBadge();
+            ui.renderOnlineUsers();
             
-            if (type === 'user_login' || type === 'user_register' || type === 'storage_change' || type === 'online_update') {
-                // Selalu refresh tabel dan stats
-                ui.renderAdminTable();
-                ui.updateStats();
-                ui.updateAdminBadge();
-                ui.renderOnlineUsers();
-                
-                // Notifikasi toast
-                if (type === 'user_login' && data && data.username && data.username !== user.username) {
-                    ui.toast(`🔔 "${data.username}" baru saja login!`, 'info');
-                }
-                if (type === 'user_register' && data && data.username) {
-                    ui.toast(`🎉 Member baru "${data.username}" mendaftar!`, 'success');
-                }
+            if (type === 'user_login' && data?.username && data.username !== user.username) {
+                ui.toast(`🔔 "${data.username}" baru saja login!`, 'info');
             }
-            
-            if (type === 'purchase' && data) {
-                ui.renderPurchaseLog();
-                ui.updateStats();
-                if (data.username !== user.username) {
-                    ui.toast(`💰 ${data.username} membeli ${data.itemName}`, 'info');
-                }
+            if (type === 'user_register' && data?.username) {
+                ui.toast(`🎉 Member baru "${data.username}" mendaftar!`, 'success');
             }
-            
-            if (type === 'command_added') {
-                ui.renderCommandTable();
-                ui.updateAdminBadge();
+            if (type === 'purchase' && data && data.username !== user.username) {
+                ui.toast(`💰 ${data.username} membeli ${data.itemName}`, 'info');
             }
         }
         
-        // User biasa - update coin kalau diubah admin
-        if (user.role === 'member' && type === 'coin_updated' && data.username === user.username) {
-            const freshUser = DB.getUser(user.username);
-            if (freshUser) {
-                const newSession = { ...freshUser, token: user.token, loginAt: user.loginAt };
-                sessionStorage.setItem('duskveil_session', JSON.stringify(newSession));
+        if (user.role === 'member' && type === 'coin_updated' && data?.username === user.username) {
+            const fresh = DB.getUser(user.username);
+            if (fresh) {
+                const newSess = { ...fresh, token: user.token, loginAt: user.loginAt };
+                sessionStorage.setItem('duskveil_session', JSON.stringify(newSess));
                 ui.updateHeader();
                 if (data.byAdmin) {
-                    ui.toast(`💰 Saldo diperbarui admin: ${freshUser.coin.toLocaleString()} koin!`, 'success');
+                    ui.toast(`💰 Saldo diperbarui: ${fresh.coin.toLocaleString()} koin!`, 'success');
                 }
             }
         }
@@ -124,62 +246,39 @@ const SyncEngine = {
     
     broadcast(type, data) {
         const payload = { type, data, timestamp: Date.now() };
-        
-        // BroadcastChannel
         if (this.channel) {
-            try {
-                this.channel.postMessage(payload);
-            } catch(e) {}
+            try { this.channel.postMessage(payload); } catch(e) {}
         }
-        
-        // Trigger storage event dengan timestamp unik
         localStorage.setItem('duskveil_last_sync', Date.now().toString());
     },
     
     trackOnline() {
-        // Update online status setiap 10 detik
-        const updateOnline = () => {
+        const update = () => {
             const session = sessionStorage.getItem('duskveil_session');
-            if (session) {
-                const user = JSON.parse(session);
-                let onlineUsers = JSON.parse(localStorage.getItem('duskveil_online_users') || '[]');
-                
-                // Hapus entry user ini yang lama
-                onlineUsers = onlineUsers.filter(u => u.username !== user.username);
-                
-                // Tambah entry baru
-                onlineUsers.push({
-                    username: user.username,
-                    role: user.role,
-                    lastSeen: Date.now()
-                });
-                
-                // Bersihkan user yang offline > 30 detik
-                const now = Date.now();
-                onlineUsers = onlineUsers.filter(u => (now - u.lastSeen) < 30000);
-                
-                localStorage.setItem('duskveil_online_users', JSON.stringify(onlineUsers));
-                this.broadcast('online_update', { count: onlineUsers.length });
-            }
+            if (!session) return;
+            const user = JSON.parse(session);
+            let online = JSON.parse(localStorage.getItem('duskveil_online_users') || '[]');
+            online = online.filter(u => u.username !== user.username);
+            online.push({ username: user.username, role: user.role, lastSeen: Date.now() });
+            online = online.filter(u => (Date.now() - u.lastSeen) < 30000);
+            localStorage.setItem('duskveil_online_users', JSON.stringify(online));
         };
         
-        updateOnline();
-        setInterval(updateOnline, 10000);
+        update();
+        setInterval(update, 5000);
         
-        // Cleanup saat tab ditutup
         window.addEventListener('beforeunload', () => {
             const session = sessionStorage.getItem('duskveil_session');
             if (session) {
                 const user = JSON.parse(session);
-                let onlineUsers = JSON.parse(localStorage.getItem('duskveil_online_users') || '[]');
-                onlineUsers = onlineUsers.filter(u => u.username !== user.username);
-                localStorage.setItem('duskveil_online_users', JSON.stringify(onlineUsers));
+                let online = JSON.parse(localStorage.getItem('duskveil_online_users') || '[]');
+                online = online.filter(u => u.username !== user.username);
+                localStorage.setItem('duskveil_online_users', JSON.stringify(online));
             }
         });
     },
     
     startPolling() {
-        // Polling setiap 1.5 detik
         this.syncInterval = setInterval(() => {
             const currentHash = this.getDataHash();
             if (currentHash !== this.lastDataHash) {
@@ -187,7 +286,6 @@ const SyncEngine = {
                 this.handleSync('storage_change', {});
             }
             
-            // Update online users display
             const session = sessionStorage.getItem('duskveil_session');
             if (session) {
                 const user = JSON.parse(session);
@@ -195,12 +293,12 @@ const SyncEngine = {
                     ui.renderOnlineUsers();
                 }
             }
-        }, 1500);
+        }, 1000);
     }
 };
 
 // ============================================
-// SECURITY UTILITIES
+// SECURITY
 // ============================================
 const Security = {
     sanitize: (str) => {
@@ -209,13 +307,8 @@ const Security = {
         div.textContent = str;
         return div.innerHTML;
     },
-    validateUsername: (username) => {
-        const regex = /^[a-zA-Z0-9_]{3,16}$/;
-        return regex.test(username);
-    },
-    validatePassword: (password) => {
-        return password.length >= 6;
-    },
+    validateUsername: (username) => /^[a-zA-Z0-9_]{3,16}$/.test(username),
+    validatePassword: (password) => password.length >= 6,
     rateLimiter: {},
     checkRateLimit: (action, maxAttempts = 5, windowMs = 60000) => {
         const now = Date.now();
@@ -233,106 +326,11 @@ const Security = {
         record.attempts++;
         return true;
     },
-    generateToken: () => {
-        return Array.from(crypto.getRandomValues(new Uint8Array(32)))
-            .map(b => b.toString(16).padStart(2, '0'))
-            .join('');
-    }
+    generateToken: () => Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join('')
 };
 
 // ============================================
-// TURNSTILE MANAGER - MOBILE FIX
-// ============================================
-const TurnstileManager = {
-    widgetId: null,
-    currentTab: 'login',
-    siteKey: '0x4AAAAAADWhIdBmcN5kZHEQ',
-    
-    render: (tab) => {
-        TurnstileManager.remove();
-        TurnstileManager.currentTab = tab;
-        
-        const containerId = tab === 'login' ? 'turnstile-login' : 'turnstile-register';
-        const container = document.getElementById(containerId);
-        if (!container) return;
-        
-        container.innerHTML = '';
-        
-        // Deteksi mobile
-        const isMobile = window.innerWidth < 768;
-        
-        if (window.turnstile) {
-            try {
-                TurnstileManager.widgetId = window.turnstile.render(container, {
-                    sitekey: TurnstileManager.siteKey,
-                    callback: (token) => {
-                        app.turnstileToken = token;
-                        console.log(`✅ Turnstile verified for ${tab}`);
-                    },
-                    'error-callback': () => {
-                        app.turnstileToken = null;
-                        ui.toast('❌ Verifikasi gagal. Coba lagi.', 'error');
-                    },
-                    'expired-callback': () => {
-                        app.turnstileToken = null;
-                        ui.toast('⚠️ Verifikasi expired. Refresh...', 'warning');
-                    },
-                    theme: 'dark',
-                    size: isMobile ? 'compact' : 'normal',
-                    retry: 'auto',
-                    'refresh-expired': 'auto'
-                });
-            } catch(e) {
-                console.error('Turnstile render error:', e);
-                container.innerHTML = '<div style="color:var(--text3);font-size:0.78rem;text-align:center;padding:12px;">❌ Gagal load verifikasi. Refresh halaman.</div>';
-            }
-        } else {
-            // Fallback: tunggu script load
-            container.innerHTML = '<div style="color:var(--text3);font-size:0.78rem;text-align:center;padding:12px;">⏳ Memuat verifikasi keamanan...</div>';
-            
-            // Coba lagi setelah 2 detik
-            setTimeout(() => {
-                if (window.turnstile && !TurnstileManager.widgetId) {
-                    TurnstileManager.render(tab);
-                }
-            }, 2000);
-        }
-    },
-    
-    remove: () => {
-        if (TurnstileManager.widgetId && window.turnstile) {
-            try {
-                window.turnstile.remove(TurnstileManager.widgetId);
-            } catch(e) {
-                console.log('Turnstile remove error:', e);
-            }
-            TurnstileManager.widgetId = null;
-        }
-        app.turnstileToken = null;
-    },
-    
-    reset: () => {
-        if (TurnstileManager.widgetId && window.turnstile) {
-            try {
-                window.turnstile.reset(TurnstileManager.widgetId);
-            } catch(e) {
-                console.log('Turnstile reset error:', e);
-            }
-        }
-        app.turnstileToken = null;
-    },
-    
-    // Force refresh untuk mobile
-    refreshForMobile: () => {
-        const isMobile = window.innerWidth < 768;
-        if (isMobile && TurnstileManager.widgetId) {
-            TurnstileManager.render(TurnstileManager.currentTab);
-        }
-    }
-};
-
-// ============================================
-// PTERODACTYL AUTO-EXECUTE
+// PTERODACTYL API
 // ============================================
 const PterodactylAPI = {
     sendCommand: async (command) => {
@@ -487,7 +485,7 @@ const PurchaseLog = {
 };
 
 // ============================================
-// DATABASE (ENCRYPTED)
+// DATABASE
 // ============================================
 const DB = {
     encrypt: (data) => {
@@ -648,7 +646,7 @@ const ui = {
             lf.classList.add('hidden'); rf.classList.remove('hidden');
             btns[0].classList.remove('active'); btns[1].classList.add('active');
         }
-        // Delay render Turnstile agar DOM siap
+        // Render Turnstile setelah DOM update
         setTimeout(() => TurnstileManager.render(tab), 100);
     },
 
@@ -715,19 +713,13 @@ const ui = {
         
         tbody.innerHTML = users.map(u => {
             const isOnline = onlineUsers.some(o => o.username === u.username && (now - o.lastSeen) < 30000);
-            const onlineIndicator = isOnline ? '<span style="color:#10b981;font-size:0.7rem;">● ONLINE</span>' : '<span style="color:var(--text3);font-size:0.7rem;">○ OFFLINE</span>';
+            const onlineDot = isOnline 
+                ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;box-shadow:0 0 6px #10b981;margin-right:6px;"></span>'
+                : '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--text3);margin-right:6px;"></span>';
             
             return `
             <tr>
-                <td>
-                    <div style="display:flex;align-items:center;gap:8px;">
-                        <div style="width:8px;height:8px;border-radius:50%;background:${isOnline ? '#10b981' : 'var(--text3)'};box-shadow:${isOnline ? '0 0 8px #10b981' : 'none'};"></div>
-                        <div>
-                            <div style="font-weight:600;">${Security.sanitize(u.username)}</div>
-                            <div>${onlineIndicator}</div>
-                        </div>
-                    </div>
-                </td>
+                <td>${onlineDot}${Security.sanitize(u.username)}</td>
                 <td><span class="status-badge ${u.role === 'admin' ? 'status-admin' : 'status-member'}">${u.role.toUpperCase()}</span></td>
                 <td style="color:var(--gold);">${(u.coin || 0).toLocaleString()}</td>
                 <td style="font-size:0.78rem;color:var(--text3);">${u.createdAt ? new Date(u.createdAt).toLocaleDateString('id-ID') : '-'}</td>
@@ -745,15 +737,15 @@ const ui = {
         const activeUsers = onlineUsers.filter(u => (now - u.lastSeen) < 30000);
         
         if (activeUsers.length === 0) {
-            container.innerHTML = '<div style="color:var(--text3);font-size:0.85rem;">Tidak ada user online</div>';
+            container.innerHTML = '<div style="color:var(--text3);font-size:0.85rem;text-align:center;padding:12px;">Tidak ada user online</div>';
             return;
         }
         
         container.innerHTML = activeUsers.map(u => `
-            <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg2);border-radius:6px;margin:2px 0;">
-                <div style="width:8px;height:8px;border-radius:50%;background:#10b981;box-shadow:0 0 6px #10b981;"></div>
-                <span style="font-weight:500;font-size:0.85rem;">${Security.sanitize(u.username)}</span>
-                <span style="font-size:0.7rem;color:var(--text3);margin-left:auto;">${u.role === 'admin' ? '👑 Admin' : '👤 Member'}</span>
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg2);border-radius:8px;border:1px solid var(--border);">
+                <div style="width:10px;height:10px;border-radius:50%;background:#10b981;box-shadow:0 0 8px #10b981;animation:pulse 2s infinite;"></div>
+                <span style="font-weight:600;font-size:0.9rem;">${Security.sanitize(u.username)}</span>
+                <span style="font-size:0.7rem;color:var(--text3);margin-left:auto;padding:2px 8px;background:var(--bg);border-radius:4px;">${u.role === 'admin' ? '👑 Admin' : '👤 Member'}</span>
             </div>
         `).join('');
     },
@@ -898,8 +890,11 @@ const ui = {
             if (adminDash) adminDash.classList.add('hidden');
             document.getElementById('command-panel')?.classList.add('hidden');
             document.getElementById('purchase-panel')?.classList.add('hidden');
-            // Render Turnstile setelah DOM siap
-            setTimeout(() => TurnstileManager.render('login'), 200);
+            // Init Turnstile setelah DOM siap
+            setTimeout(() => {
+                TurnstileManager.init();
+                TurnstileManager.render('login');
+            }, 300);
         } else {
             auth.classList.add('hidden');
             nav.classList.remove('hidden');
@@ -979,11 +974,6 @@ const app = {
         }
 
         app.initParticles();
-        
-        // Handle resize untuk mobile Turnstile
-        window.addEventListener('resize', () => {
-            TurnstileManager.refreshForMobile();
-        });
     },
 
     initParticles: () => {
@@ -1011,7 +1001,7 @@ const app = {
 
         if (!app.turnstileToken) {
             ui.toast('⚠️ Harap selesaikan verifikasi keamanan terlebih dahulu!', 'error');
-            // Re-render Turnstile kalau belum muncul
+            // Re-render Turnstile
             TurnstileManager.render('login');
             return;
         }
@@ -1174,7 +1164,7 @@ const app = {
     copyAndExecute: async (id, command) => {
         await navigator.clipboard.writeText(command);
         ui.toast('✅ Command di-copy ke clipboard!');
-        if (confirm('Apakah command sudah dijalankan di server?\\n\\nOK = sudah, Cancel = belum')) {
+        if (confirm('Apakah command sudah dijalankan di server?\n\nOK = sudah, Cancel = belum')) {
             CommandQueue.markExecuted(id);
             ui.renderCommandTable();
             ui.updateAdminBadge();
@@ -1272,7 +1262,7 @@ const app = {
     },
 
     clearAllData: () => {
-        if (!confirm('⚠️ PERINGATAN: Ini akan menghapus SEMUA data!\\n\\nYakin ingin melanjutkan?')) return;
+        if (!confirm('⚠️ PERINGATAN: Ini akan menghapus SEMUA data!\n\nYakin ingin melanjutkan?')) return;
         if (!confirm('Konfirmasi terakhir: Semua data akan HILANG PERMANEN. Lanjutkan?')) return;
         localStorage.removeItem('duskveil_db');
         localStorage.removeItem('duskveil_commands');
