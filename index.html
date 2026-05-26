@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DuskVeilSMP — Official Store</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <!-- Cloudflare Turnstile -->
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+</head>
+<body>
+
+    <!-- PARTICLES BACKGROUND -->
+    <div class="particles" id="particles"></div>
+    <div class="bg-gradient-mesh"></div>
+
+    <!-- NAVIGATION -->
+    <nav id="navbar" class="hidden">
+        <div class="nav-inner">
+            <div class="logo" onclick="ui.showStorePanel()" style="cursor:pointer">
+                <span class="logo-dusk">DUSK</span><span class="logo-veil">VEIL</span><span class="logo-smp">SMP</span>
+            </div>
+            <div class="nav-items">
+                <div class="user-info">
+                    <div class="user-avatar" id="nav-avatar">?</div>
+                    <span id="nav-username" class="nav-username">Member</span>
+                    <div class="coin-badge">
+                        <span class="coin-icon">✦</span>
+                        <span id="nav-coin">0</span>
+                    </div>
+                </div>
+                <button id="nav-commands-btn" class="btn-nav-cmd hidden" onclick="ui.showCommandPanel()">
+                    <span>⌨</span> Commands
+                    <span id="pending-badge" class="pending-badge" style="display:none">0</span>
+                </button>
+                <button id="nav-purchases-btn" class="btn-nav-cmd hidden" onclick="ui.showPurchasePanel()" style="background: linear-gradient(135deg, #059669, #10b981);">
+                    <span>📋</span> Riwayat
+                </button>
+                <button id="nav-admin-btn" class="btn-nav-cmd hidden" onclick="ui.showAdminPanel()" style="background: linear-gradient(135deg, #dc2626, #ef4444);">
+                    <span>🛡</span> Admin
+                </button>
+                <button class="btn-logout" onclick="app.logout()">
+                    <span>↩</span> Logout
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- AUTH SECTION -->
+        <section id="auth-section" class="fade-in">
+            <div class="auth-wrapper">
+                <div class="auth-deco-left"></div>
+                <div class="auth-deco-right"></div>
+
+                <div class="auth-card">
+                    <div class="auth-logo-area">
+                        <div class="auth-emblem">⚔</div>
+                        <h1 class="auth-title">DUSKVEIL<span>SMP</span></h1>
+                        <p class="auth-subtitle">Official Member Store</p>
+                    </div>
+
+                    <div class="tabs">
+                        <button class="tab-btn active" onclick="ui.switchTab('login')">Masuk</button>
+                        <button class="tab-btn" onclick="ui.switchTab('register')">Daftar</button>
+                        <div class="tab-indicator" id="tab-indicator"></div>
+                    </div>
+
+                    <form id="form-login" onsubmit="app.handleLogin(event)">
+                        <div class="input-group">
+                            <label>Username Minecraft</label>
+                            <div class="input-wrap">
+                                <span class="input-icon">◈</span>
+                                <input type="text" id="login-user" required placeholder="Username Minecraft anda" minlength="3" maxlength="16" pattern="[a-zA-Z0-9_]+">
+                            </div>
+                        </div>
+                        <div class="input-group">
+                            <label>Password</label>
+                            <div class="input-wrap">
+                                <span class="input-icon">◉</span>
+                                <input type="password" id="login-pass" required placeholder="Password anda" minlength="6">
+                            </div>
+                        </div>
+                        
+                        <!-- Cloudflare Turnstile Widget VISIBLE -->
+                        <div class="cf-turnstile-wrapper">
+                            <div class="cf-turnstile" 
+                                 data-sitekey="0x4AAAAAADWhIdBmcN5kZHEQ" 
+                                 data-callback="app.onTurnstileSuccess"
+                                 data-error-callback="app.onTurnstileError"
+                                 data-theme="dark"
+                                 data-size="normal">
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn-primary" id="login-btn">
+                            <span class="btn-text">MASUK SERVER</span>
+                            <span class="btn-arrow">→</span>
+                        </button>
+                    </form>
+
+                    <form id="form-register" class="hidden" onsubmit="app.handleRegister(event)">
+                        <div class="input-group">
+                            <label>Username Minecraft Baru</label>
+                            <div class="input-wrap">
+                                <span class="input-icon">◈</span>
+                                <input type="text" id="reg-user" required placeholder="Buat username anda" minlength="3" maxlength="16" pattern="[a-zA-Z0-9_]+">
+                            </div>
+                        </div>
+                        <div class="input-group">
+                            <label>Password</label>
+                            <div class="input-wrap">
+                                <span class="input-icon">◉</span>
+                                <input type="password" id="reg-pass" required placeholder="Buat password anda" minlength="6">
+                            </div>
+                        </div>
+                        <div class="input-group">
+                            <label>Konfirmasi Password</label>
+                            <div class="input-wrap">
+                                <span class="input-icon">◉</span>
+                                <input type="password" id="reg-pass-confirm" required placeholder="Ulangi password">
+                            </div>
+                        </div>
+                        
+                        <!-- Cloudflare Turnstile Widget VISIBLE -->
+                        <div class="cf-turnstile-wrapper">
+                            <div class="cf-turnstile" 
+                                 data-sitekey="0x4AAAAAADWhIdBmcN5kZHEQ" 
+                                 data-callback="app.onTurnstileSuccess"
+                                 data-error-callback="app.onTurnstileError"
+                                 data-theme="dark"
+                                 data-size="normal">
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn-primary" id="register-btn">
+                            <span class="btn-text">DAFTAR SEKARANG</span>
+                            <span class="btn-arrow">→</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <!-- STORE SECTION -->
+        <section id="store-section" class="hidden fade-in">
+            <div class="store-inner">
+
+                <!-- Admin Notice -->
+                <div id="admin-notice" class="hidden admin-notice-bar">
+                    <span class="notice-icon">⚠</span>
+                    <span>MODE ADMIN — Anda memiliki akses penuh ke panel kontrol</span>
+                </div>
+
+                <!-- Hero Banner -->
+                <div class="store-hero">
+                    <div class="store-hero-text">
+                        <h2 class="store-hero-title">Official Store</h2>
+                        <p class="store-hero-sub">Gunakan koin server untuk membeli item, rank, dan skill premium</p>
+                    </div>
+                    <div class="store-hero-deco">⚔</div>
+                </div>
+
+                <!-- Categories -->
+                <div class="category-section">
+                    <div class="category-header">
+                        <span class="category-icon">📜</span>
+                        <h3>Buku Kontrak</h3>
+                        <div class="category-line"></div>
+                    </div>
+                    <div class="grid-container" id="grid-kontrak"></div>
+                </div>
+
+                <div class="category-section">
+                    <div class="category-header">
+                        <span class="category-icon">👑</span>
+                        <h3>Rank Server</h3>
+                        <div class="category-line"></div>
+                    </div>
+                    <div class="grid-container" id="grid-rank"></div>
+                </div>
+
+                <div class="category-section">
+                    <div class="category-header">
+                        <span class="category-icon">⚔️</span>
+                        <h3>Skills</h3>
+                        <div class="category-line"></div>
+                    </div>
+                    <div class="grid-container" id="grid-skill"></div>
+                </div>
+
+                <div class="category-section">
+                    <div class="category-header">
+                        <span class="category-icon">🛡️</span>
+                        <h3>Armor</h3>
+                        <div class="category-line"></div>
+                    </div>
+                    <div class="grid-container">
+                        <div class="card card-coming-soon">
+                            <div class="card-img">🛡️</div>
+                            <div class="card-content">
+                                <div class="card-title">Armor Set</div>
+                                <div class="coming-soon-badge">COMING SOON</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ADMIN DASHBOARD PANEL -->
+        <section id="admin-dashboard" class="hidden fade-in">
+            <div class="store-inner">
+                <div class="admin-dashboard-header">
+                    <div class="admin-dashboard-title">
+                        <span>🛡</span>
+                        <div>
+                            <h2>Admin Control Panel</h2>
+                            <p>Kelola server, monitor aktivitas, dan atur ekonomi</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats Cards -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">👥</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="stat-total-users">0</div>
+                            <div class="stat-label">Total Member</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">💰</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="stat-total-coins">0</div>
+                            <div class="stat-label">Total Koin Beredar</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🛒</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="stat-total-purchases">0</div>
+                            <div class="stat-label">Total Transaksi</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">⏳</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="stat-pending-commands">0</div>
+                            <div class="stat-label">Command Pending</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="panel-container">
+                    <div class="panel-header">
+                        <div class="panel-header-left">
+                            <span class="panel-icon">⚡</span>
+                            <div>
+                                <h2>Quick Actions</h2>
+                                <span class="panel-sub">Aksi cepat untuk manajemen server</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="quick-actions">
+                        <button class="quick-action-btn" onclick="ui.showCommandPanel()">
+                            <span>⌨</span>
+                            <div>
+                                <strong>Command Queue</strong>
+                                <small>Kelola command pending</small>
+                            </div>
+                        </button>
+                        <button class="quick-action-btn" onclick="ui.showPurchasePanel()">
+                            <span>📋</span>
+                            <div>
+                                <strong>Riwayat Pembelian</strong>
+                                <small>Lihat semua transaksi</small>
+                            </div>
+                        </button>
+                        <button class="quick-action-btn" onclick="app.exportAllData()">
+                            <span>💾</span>
+                            <div>
+                                <strong>Export Data</strong>
+                                <small>Backup database & log</small>
+                            </div>
+                        </button>
+                        <button class="quick-action-btn danger" onclick="app.clearAllData()">
+                            <span>🗑</span>
+                            <div>
+                                <strong>Reset Data</strong>
+                                <small>Hapus semua data (Hati-hati!)</small>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Member Management -->
+                <div class="panel-container">
+                    <div class="panel-header">
+                        <div class="panel-header-left">
+                            <span class="panel-icon">👥</span>
+                            <div>
+                                <h2>Manajemen Member</h2>
+                                <span class="panel-sub">Kelola saldo dan status member</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="admin-controls">
+                        <div class="control-group">
+                            <label>Cari Member</label>
+                            <div class="input-wrap"><span class="input-icon">◈</span><input type="text" id="admin-search" placeholder="Username..."></div>
+                        </div>
+                        <div class="control-group">
+                            <label>Atur Saldo (Koin)</label>
+                            <div class="input-wrap"><span class="input-icon">✦</span><input type="number" id="admin-coin" placeholder="Jumlah Koin" min="0"></div>
+                        </div>
+                        <div class="control-group control-group--btn">
+                            <button class="btn-success" onclick="app.adminSetCoin()">SET KOIN</button>
+                        </div>
+                    </div>
+
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Username</th>
+                                    <th>Role</th>
+                                    <th>Saldo Koin</th>
+                                    <th>Terdaftar</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="user-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Online Players Monitor -->
+                <div class="panel-container">
+                    <div class="panel-header">
+                        <div class="panel-header-left">
+                            <span class="panel-icon">🎮</span>
+                            <div>
+                                <h2>Monitor Server</h2>
+                                <span class="panel-sub">Status server dan player online</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="server-status">
+                        <div class="status-indicator online">
+                            <span class="status-dot"></span>
+                            <span>Server Online</span>
+                        </div>
+                        <div class="server-metrics">
+                            <div class="metric">
+                                <span class="metric-label">TPS</span>
+                                <span class="metric-value good">20.0</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">RAM</span>
+                                <span class="metric-value warning">4.2GB / 8GB</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Player</span>
+                                <span class="metric-value">12 / 100</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Uptime</span>
+                                <span class="metric-value">3d 12h 45m</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- PURCHASE LOG PANEL -->
+        <section id="purchase-panel" class="hidden fade-in">
+            <div class="store-inner">
+                <div class="panel-container">
+                    <div class="panel-header">
+                        <div class="panel-header-left">
+                            <span class="panel-icon">📋</span>
+                            <div>
+                                <h2>Riwayat Pembelian</h2>
+                                <span class="panel-sub">Semua transaksi yang telah dilakukan</span>
+                            </div>
+                        </div>
+                        <button class="btn-secondary btn-sm" onclick="ui.showAdminPanel()">← Kembali</button>
+                    </div>
+
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Waktu</th>
+                                    <th>Username</th>
+                                    <th>Item</th>
+                                    <th>Harga</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="purchase-log-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- COMMAND PANEL -->
+        <section id="command-panel" class="hidden fade-in">
+            <div class="store-inner">
+                <div class="panel-container">
+                    <div class="panel-header">
+                        <div class="panel-header-left">
+                            <span class="panel-icon">⌨</span>
+                            <div>
+                                <h2>Queue Command Server</h2>
+                                <span class="panel-sub">Command yang menunggu untuk dieksekusi di server</span>
+                            </div>
+                        </div>
+                        <button class="btn-secondary btn-sm" onclick="ui.showAdminPanel()">← Kembali</button>
+                    </div>
+
+                    <div class="table-wrapper">
+                        <table id="command-table">
+                            <thead>
+                                <tr>
+                                    <th>Waktu</th>
+                                    <th>Command</th>
+                                    <th>Status</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="command-table-body"></tbody>
+                        </table>
+                    </div>
+
+                    <div class="cmd-actions">
+                        <button class="btn-primary btn-sm" onclick="app.executeAllCommands()">▶ Execute All Auto</button>
+                        <button class="btn-secondary btn-sm" onclick="app.copyAllCommands()">📋 Copy All</button>
+                        <button class="btn-secondary btn-sm" onclick="app.clearAllCommands()">🗑 Clear All</button>
+                        <button class="btn-secondary btn-sm" onclick="app.exportCommands()">💾 Export JSON</button>
+                    </div>
+
+                    <div class="info-box">
+                        <p>💡 <strong>Cara Execute Command:</strong></p>
+                        <p>1️⃣ Klik <strong>"Execute All Auto"</strong> untuk mengirim otomatis ke server</p>
+                        <p>2️⃣ Atau klik <strong>"Copy All"</strong> lalu paste di console server Minecraft</p>
+                        <p>3️⃣ Klik "Mark Executed" setelah berhasil dijalankan</p>
+                        <p>🎯 <strong>Tips:</strong> Gunakan "Execute All Auto" untuk menjalankan semua sekaligus!</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- SKILL MODAL -->
+    <div id="skill-modal" class="modal hidden">
+        <div class="modal-backdrop" onclick="ui.closeSkillModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>⚔ Pilih Skill</h3>
+                <button class="modal-close" onclick="ui.closeSkillModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="skill-list" id="skill-list-container"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="ui.closeSkillModal()">Batal</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast-box"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
