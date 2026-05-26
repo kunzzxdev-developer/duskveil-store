@@ -1,4 +1,4 @@
-const API_CONFIG = {
+fixed_js = '''const API_CONFIG = {
     apiKey: 'ptlc_fUVguzJJAugo1yh86scbFvQR5tELMlb7xv5n3XBCM2l',
     serverId: '0a090342-d608-4488-8810-11b484fb3317',
     panelUrl: 'https://panel.arqonara.com'
@@ -18,6 +18,125 @@ const SKILLS_LIST = [
     { name: 'Bertahan Hidup', id: 'survival' },
     { name: 'Sihir', id: 'magic' }
 ];
+
+// ============================================
+// REAL-TIME SYNC ENGINE (BARU)
+// ============================================
+const SyncEngine = {
+    channel: null,
+    
+    init() {
+        // BroadcastChannel untuk sync antar-tab di device yang sama
+        if (typeof BroadcastChannel !== 'undefined') {
+            this.channel = new BroadcastChannel('duskveil_sync');
+            this.channel.onmessage = (event) => {
+                const { type, data } = event.data;
+                this.handleSync(type, data);
+            };
+        }
+        
+        // Polling untuk deteksi perubahan dari tab lain (fallback)
+        this.startPolling();
+        
+        // Event listener untuk storage changes (cross-tab)
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'duskveil_db' || e.key === 'duskveil_commands' || e.key === 'duskveil_purchases') {
+                this.handleSync('storage_change', { key: e.key });
+            }
+        });
+    },
+    
+    handleSync(type, data) {
+        const session = sessionStorage.getItem('duskveil_session');
+        if (!session) return;
+        const user = JSON.parse(session);
+        
+        // Update UI real-time untuk admin
+        if (user.role === 'admin') {
+            if (type === 'user_login' || type === 'user_register' || type === 'storage_change') {
+                ui.renderAdminTable();
+                ui.updateStats();
+                ui.updateAdminBadge();
+                
+                // Notifikasi admin kalau ada user baru login
+                if (type === 'user_login' && data && data.username) {
+                    ui.toast(`🔔 User "${data.username}" baru saja login!`, 'info');
+                }
+                if (type === 'user_register' && data && data.username) {
+                    ui.toast(`🎉 Member baru "${data.username}" berhasil mendaftar!`, 'success');
+                }
+            }
+            if (type === 'purchase' && data) {
+                ui.renderPurchaseLog();
+                ui.updateStats();
+                ui.toast(`💰 Pembelian baru: ${data.itemName} oleh ${data.username}`, 'info');
+            }
+            if (type === 'command_added') {
+                ui.renderCommandTable();
+                ui.updateAdminBadge();
+            }
+        }
+        
+        // Update coin untuk user biasa kalau di-update admin
+        if (user.role === 'member' && type === 'coin_updated' && data.username === user.username) {
+            const freshUser = DB.getUser(user.username);
+            if (freshUser) {
+                const newSession = { ...freshUser, token: user.token, loginAt: user.loginAt };
+                sessionStorage.setItem('duskveil_session', JSON.stringify(newSession));
+                ui.updateHeader();
+                if (data.byAdmin) {
+                    ui.toast(`💰 Saldo koin Anda diperbarui admin menjadi ${freshUser.coin.toLocaleString()}!`, 'success');
+                }
+            }
+        }
+    },
+    
+    broadcast(type, data) {
+        // Kirim ke BroadcastChannel
+        if (this.channel) {
+            this.channel.postMessage({ type, data, timestamp: Date.now() });
+        }
+        
+        // Trigger storage event untuk cross-tab
+        // Dengan mengupdate localStorage dengan timestamp unik
+        localStorage.setItem('duskveil_last_sync', Date.now().toString());
+    },
+    
+    startPolling() {
+        // Polling setiap 2 detik untuk deteksi perubahan
+        // Berguna untuk device yang tidak support BroadcastChannel
+        let lastSync = localStorage.getItem('duskveil_last_sync') || '0';
+        
+        setInterval(() => {
+            const currentSync = localStorage.getItem('duskveil_last_sync') || '0';
+            if (currentSync !== lastSync) {
+                lastSync = currentSync;
+                this.handleSync('storage_change', {});
+            }
+            
+            // Update stats real-time untuk admin panel
+            const session = sessionStorage.getItem('duskveil_session');
+            if (session) {
+                const user = JSON.parse(session);
+                if (user.role === 'admin') {
+                    // Cek apakah ada user baru yang belum muncul di tabel
+                    const currentUsers = DB.getUsers();
+                    const tableBody = document.getElementById('user-table-body');
+                    if (tableBody) {
+                        const visibleRows = tableBody.querySelectorAll('tr');
+                        if (visibleRows.length !== currentUsers.length && !document.getElementById('admin-dashboard').classList.contains('hidden')) {
+                            ui.renderAdminTable();
+                            ui.updateStats();
+                        }
+                    }
+                    
+                    // Update pending badge real-time
+                    ui.updateAdminBadge();
+                }
+            }
+        }, 2000);
+    }
+};
 
 // ============================================
 // SECURITY UTILITIES
@@ -69,7 +188,6 @@ const TurnstileManager = {
     siteKey: '0x4AAAAAADWhIdBmcN5kZHEQ',
     
     render: (tab) => {
-        // Hapus widget lama
         TurnstileManager.remove();
         TurnstileManager.currentTab = tab;
         
@@ -77,10 +195,8 @@ const TurnstileManager = {
         const container = document.getElementById(containerId);
         if (!container) return;
         
-        // Bersihkan container
         container.innerHTML = '';
         
-        // Render widget baru
         if (window.turnstile) {
             TurnstileManager.widgetId = window.turnstile.render(container, {
                 sitekey: TurnstileManager.siteKey,
@@ -96,7 +212,6 @@ const TurnstileManager = {
                 size: 'normal'
             });
         } else {
-            // Fallback: kalau script Turnstile belum load
             container.innerHTML = '<div style="color:var(--text3);font-size:0.78rem;text-align:center;padding:12px;">⏳ Memuat verifikasi...</div>';
         }
     },
@@ -200,7 +315,7 @@ const PterodactylAPI = {
 };
 
 // ============================================
-// COMMAND QUEUE
+// COMMAND QUEUE (DENGAN SYNC)
 // ============================================
 class CommandQueue {
     static getAll() {
@@ -209,6 +324,7 @@ class CommandQueue {
     }
     static save(cmds) {
         localStorage.setItem('duskveil_commands', JSON.stringify(cmds));
+        SyncEngine.broadcast('command_added', { count: cmds.length });
     }
     static add(command, username, itemName, autoSent = false) {
         const cmds = this.getAll();
@@ -241,6 +357,7 @@ class CommandQueue {
     }
     static clearAll() {
         localStorage.setItem('duskveil_commands', '[]');
+        SyncEngine.broadcast('command_added', { count: 0 });
     }
     static getPending() {
         return this.getAll().filter(c => c.status === 'pending');
@@ -248,7 +365,7 @@ class CommandQueue {
 }
 
 // ============================================
-// PURCHASE LOG
+// PURCHASE LOG (DENGAN SYNC)
 // ============================================
 const PurchaseLog = {
     getAll() {
@@ -260,7 +377,7 @@ const PurchaseLog = {
     },
     add(username, itemName, price, commands, autoExecuted = false) {
         const all = this.getAll();
-        all.unshift({
+        const entry = {
             id: Date.now(),
             username: Security.sanitize(username),
             itemName: Security.sanitize(itemName),
@@ -268,8 +385,12 @@ const PurchaseLog = {
             commands: Array.isArray(commands) ? commands.map(c => Security.sanitize(c)) : [Security.sanitize(commands)],
             autoExecuted,
             timestamp: new Date().toISOString()
-        });
+        };
+        all.unshift(entry);
         this.save(all.slice(0, 200));
+        
+        // Broadcast ke admin real-time
+        SyncEngine.broadcast('purchase', entry);
     },
     getRecent(n = 50) {
         return this.getAll().slice(0, n);
@@ -277,7 +398,7 @@ const PurchaseLog = {
 };
 
 // ============================================
-// DATABASE (ENCRYPTED)
+// DATABASE (ENCRYPTED) - DENGAN SYNC
 // ============================================
 const DB = {
     encrypt: (data) => {
@@ -297,6 +418,8 @@ const DB = {
     },
     save: (data) => {
         localStorage.setItem('duskveil_db', DB.encrypt(data));
+        // Trigger sync untuk update real-time
+        localStorage.setItem('duskveil_last_sync', Date.now().toString());
     },
     init: () => {
         let data = DB.getKey();
@@ -326,7 +449,12 @@ const DB = {
         const user = DB.getKey().users.find(x => x.username === u && x.password === p);
         if (user) {
             const token = Security.generateToken();
-            return { success: true, user: { ...user, token, loginAt: new Date().toISOString() } };
+            const userData = { ...user, token, loginAt: new Date().toISOString() };
+            
+            // Broadcast ke semua tab bahwa user login
+            SyncEngine.broadcast('user_login', { username: u, role: user.role, timestamp: Date.now() });
+            
+            return { success: true, user: userData };
         }
         return { success: false, message: 'Username atau password salah.' };
     },
@@ -340,14 +468,20 @@ const DB = {
         const data = DB.getKey();
         if (u === ADMIN_CONFIG.username) return { success: false, message: 'Username terlindungi.' };
         if (data.users.find(x => x.username === u)) return { success: false, message: 'Username sudah ada.' };
-        data.users.push({
+        
+        const newUser = {
             username: u,
             password: p,
             role: 'member',
             coin: 1000,
             createdAt: new Date().toISOString()
-        });
+        };
+        data.users.push(newUser);
         DB.save(data);
+        
+        // Broadcast ke semua tab bahwa user baru terdaftar
+        SyncEngine.broadcast('user_register', { username: u, timestamp: Date.now() });
+        
         return { success: true };
     },
     updateUserCoin: (username, newCoin) => {
@@ -356,6 +490,14 @@ const DB = {
         if (idx !== -1) {
             data.users[idx].coin = Math.max(0, parseInt(newCoin) || 0);
             DB.save(data);
+            
+            // Broadcast update coin ke user yang bersangkutan
+            SyncEngine.broadcast('coin_updated', { 
+                username, 
+                coin: data.users[idx].coin,
+                byAdmin: true 
+            });
+            
             const session = sessionStorage.getItem('duskveil_session');
             if (session) {
                 let s = JSON.parse(session);
@@ -423,7 +565,6 @@ const ui = {
             lf.classList.add('hidden'); rf.classList.remove('hidden');
             btns[0].classList.remove('active'); btns[1].classList.add('active');
         }
-        // Render Turnstile untuk tab yang aktif
         TurnstileManager.render(tab);
     },
 
@@ -512,7 +653,7 @@ const ui = {
                 <tr>
                     <td style="font-size:0.78rem;color:var(--text3);">${new Date(p.timestamp).toLocaleString('id-ID')}</td>
                     <td style="font-weight:600;">${Security.sanitize(p.username)}</td>
-                    <td>${Security.sanitize(p.itemName)}<<div style="margin-top:4px;">${cmdsHtml}</div></td>
+                    <td>${Security.sanitize(p.itemName)}<div style="margin-top:4px;">${cmdsHtml}</div></td>
                     <td style="color:var(--gold);font-weight:700;">${(p.price || 0).toLocaleString()}</td>
                     <td><span class="command-status ${statusClass}">${statusText}</span></td>
                 </tr>`;
@@ -628,7 +769,6 @@ const ui = {
             if (adminDash) adminDash.classList.add('hidden');
             document.getElementById('command-panel')?.classList.add('hidden');
             document.getElementById('purchase-panel')?.classList.add('hidden');
-            // Render Turnstile untuk tab login saat kembali ke auth
             setTimeout(() => TurnstileManager.render('login'), 100);
         } else {
             auth.classList.add('hidden');
@@ -682,6 +822,9 @@ const app = {
     turnstileToken: null,
 
     init: () => {
+        // Init sync engine dulu
+        SyncEngine.init();
+        
         DB.init();
         ui.renderStore();
         
@@ -804,10 +947,16 @@ const app = {
     },
 
     logout: () => {
+        const user = app._getUser();
         sessionStorage.removeItem('duskveil_session');
         ui.showPage('auth');
         ui.toast('Anda telah keluar.');
         app.turnstileToken = null;
+        
+        // Broadcast logout ke admin
+        if (user) {
+            SyncEngine.broadcast('user_logout', { username: user.username, timestamp: Date.now() });
+        }
     },
 
     _deductCoin(user, price) {
@@ -933,7 +1082,7 @@ const app = {
                         }
                     }
                 });
-                const allCmds = pending.map(c => c.command).join('\n');
+                const allCmds = pending.map(c => c.command).join('\\n');
                 navigator.clipboard.writeText(allCmds);
                 ui.toast(`⚠️ Sebagian command gagal. Semua command di-copy ke clipboard — paste manual!`, 'error');
             }
@@ -946,7 +1095,7 @@ const app = {
     copyAllCommands: async () => {
         const pending = CommandQueue.getPending();
         if (pending.length === 0) { ui.toast('📭 Tidak ada command pending!', 'error'); return; }
-        const allCmds = pending.map(c => c.command).join('\n');
+        const allCmds = pending.map(c => c.command).join('\\n');
         await navigator.clipboard.writeText(allCmds);
         ui.toast(`✅ ${pending.length} command di-copy ke clipboard!`);
     },
@@ -988,7 +1137,7 @@ const app = {
     },
 
     clearAllData: () => {
-        if (!confirm('⚠️ PERINGATAN: Ini akan menghapus SEMUA data (member, pembelian, command)!\n\nYakin ingin melanjutkan?')) return;
+        if (!confirm('⚠️ PERINGATAN: Ini akan menghapus SEMUA data (member, pembelian, command)!\\n\\nYakin ingin melanjutkan?')) return;
         if (!confirm('Konfirmasi terakhir: Semua data akan HILANG PERMANEN. Lanjutkan?')) return;
         localStorage.removeItem('duskveil_db');
         localStorage.removeItem('duskveil_commands');
@@ -1024,3 +1173,4 @@ const app = {
 };
 
 window.addEventListener('DOMContentLoaded', () => app.init());
+
