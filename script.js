@@ -85,7 +85,7 @@ const SharedDB = {
 };
 
 // ============================================
-// SYNC ENGINE — deteksi perubahan real-time
+// SYNC ENGINE
 // ============================================
 const SyncEngine = {
     channel: null,
@@ -845,7 +845,7 @@ const app = {
             ui.toast(`✅ Semua ${pending.length} command berhasil!`);
         } else {
             pending.forEach((c, i) => { if (results[i]?.success) CommandQueue.markExecuted(c.id); else CommandQueue.markFailed(c.id); });
-            navigator.clipboard.writeText(pending.map(c => c.command).join('\\n'));
+            navigator.clipboard.writeText(pending.map(c => c.command).join('\n'));
             ui.toast('⚠️ Sebagian gagal. Command di-copy — paste manual!', 'error');
         }
         ui.renderCommandTable(); ui.updateAdminBadge(); ui.updateStats();
@@ -854,7 +854,7 @@ const app = {
     async copyAllCommands() {
         const pending = CommandQueue.getPending();
         if (pending.length === 0) { ui.toast('📭 Tidak ada command!', 'error'); return; }
-        await navigator.clipboard.writeText(pending.map(c => c.command).join('\\n'));
+        await navigator.clipboard.writeText(pending.map(c => c.command).join('\n'));
         ui.toast(`✅ ${pending.length} command di-copy!`);
     },
 
@@ -909,4 +909,41 @@ window.addEventListener('DOMContentLoaded', () => app.init());
 window.addEventListener('beforeunload', () => {
     const user = app._getUser();
     if (user) SharedDB.removeSession(user.username);
-})
+});
+'''
+
+# Verifikasi: cek apakah ada karakter aneh di akhir
+print("Last 200 chars:")
+print(repr(js_fixed[-200:]))
+print()
+
+# Cek apakah ada var(--border1) yang salah
+if 'border1' in js_fixed:
+    print("ERROR: masih ada 'border1'!")
+else:
+    print("OK: tidak ada 'border1'")
+
+# Cek apakah ada \\n yang salah (double escaped)
+if "join('\\\\n')" in js_fixed:
+    print("ERROR: masih ada join('\\\\n')!")
+else:
+    print("OK: tidak ada join('\\\\n')")
+
+# Cek apakah ada }) ekstra di akhir
+if js_fixed.rstrip().endswith('})'):
+    print("ERROR: masih ada }) ekstra di akhir!")
+else:
+    print("OK: tidak ada }) ekstra di akhir")
+
+# Cek bracket balance
+open_brackets = js_fixed.count('{')
+close_brackets = js_fixed.count('}')
+open_parens = js_fixed.count('(')
+close_parens = js_fixed.count(')')
+print(f"\nBrackets: {open_brackets} open, {close_brackets} close")
+print(f"Parens: {open_parens} open, {close_parens} close")
+
+with open('/mnt/agents/output/script.js', 'w', encoding='utf-8') as f:
+    f.write(js_fixed)
+
+print(f"\n✅ script.js saved! Size: {len(js_fixed)} chars")
