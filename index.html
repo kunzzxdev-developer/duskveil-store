@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -10,7 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <!-- Cloudflare Turnstile -->
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad" async defer></script>
 </head>
 <body>
 
@@ -21,7 +21,7 @@
     <!-- NAVIGATION -->
     <nav id="navbar" class="hidden">
         <div class="nav-inner">
-            <div class="logo" onclick="ui.showStorePanel()" style="cursor:pointer">
+            <div class="logo" onclick="ui.showStorePanel()">
                 <span class="logo-dusk">DUSK</span><span class="logo-veil">VEIL</span><span class="logo-smp">SMP</span>
             </div>
             <div class="nav-items">
@@ -37,10 +37,10 @@
                     <span>⌨</span> Commands
                     <span id="pending-badge" class="pending-badge" style="display:none">0</span>
                 </button>
-                <button id="nav-purchases-btn" class="btn-nav-cmd hidden" onclick="ui.showPurchasePanel()" style="background: linear-gradient(135deg, #059669, #10b981);">
+                <button id="nav-purchases-btn" class="btn-nav-cmd hidden" onclick="ui.showPurchasePanel()">
                     <span>📋</span> Riwayat
                 </button>
-                <button id="nav-admin-btn" class="btn-nav-cmd hidden" onclick="ui.showAdminPanel()" style="background: linear-gradient(135deg, #dc2626, #ef4444);">
+                <button id="nav-admin-btn" class="btn-nav-cmd hidden" onclick="ui.showAdminPanel()">
                     <span>🛡</span> Admin
                 </button>
                 <button class="btn-logout" onclick="app.logout()">
@@ -67,7 +67,6 @@
                     <div class="tabs">
                         <button class="tab-btn active" onclick="ui.switchTab('login')">Masuk</button>
                         <button class="tab-btn" onclick="ui.switchTab('register')">Daftar</button>
-                        <div class="tab-indicator" id="tab-indicator"></div>
                     </div>
 
                     <form id="form-login" onsubmit="app.handleLogin(event)">
@@ -86,9 +85,9 @@
                             </div>
                         </div>
                         
-                        <!-- Turnstile Container (dinamis) -->
-                        <div class="cf-turnstile-wrapper">
-                            <div id="turnstile-login"></div>
+                        <!-- Turnstile Container -->
+                        <div class="cf-turnstile-wrapper" id="turnstile-login-wrapper">
+                            <div id="turnstile-login" class="cf-turnstile"></div>
                         </div>
                         
                         <button type="submit" class="btn-primary" id="login-btn">
@@ -120,9 +119,9 @@
                             </div>
                         </div>
                         
-                        <!-- Turnstile Container (dinamis) -->
-                        <div class="cf-turnstile-wrapper">
-                            <div id="turnstile-register"></div>
+                        <!-- Turnstile Container -->
+                        <div class="cf-turnstile-wrapper" id="turnstile-register-wrapper">
+                            <div id="turnstile-register" class="cf-turnstile"></div>
                         </div>
                         
                         <button type="submit" class="btn-primary" id="register-btn">
@@ -137,14 +136,11 @@
         <!-- STORE SECTION -->
         <section id="store-section" class="hidden fade-in">
             <div class="store-inner">
-
-                <!-- Admin Notice -->
                 <div id="admin-notice" class="hidden admin-notice-bar">
                     <span class="notice-icon">⚠</span>
                     <span>MODE ADMIN — Anda memiliki akses penuh ke panel kontrol</span>
                 </div>
 
-                <!-- Hero Banner -->
                 <div class="store-hero">
                     <div class="store-hero-text">
                         <h2 class="store-hero-title">Official Store</h2>
@@ -153,7 +149,6 @@
                     <div class="store-hero-deco">⚔</div>
                 </div>
 
-                <!-- Categories -->
                 <div class="category-section">
                     <div class="category-header">
                         <span class="category-icon">📜</span>
@@ -200,7 +195,7 @@
             </div>
         </section>
 
-        <!-- ADMIN DASHBOARD PANEL -->
+        <!-- ADMIN DASHBOARD -->
         <section id="admin-dashboard" class="hidden fade-in">
             <div class="store-inner">
                 <div class="admin-dashboard-header">
@@ -213,7 +208,6 @@
                     </div>
                 </div>
 
-                <!-- Stats Cards -->
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-icon">👥</div>
@@ -226,40 +220,39 @@
                         <div class="stat-icon">💰</div>
                         <div class="stat-info">
                             <div class="stat-value" id="stat-total-coins">0</div>
-                            <div class="stat-label">Total Koin Beredar</div>
+                            <div class="stat-label">Total Koin</div>
                         </div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-icon">🛒</div>
                         <div class="stat-info">
                             <div class="stat-value" id="stat-total-purchases">0</div>
-                            <div class="stat-label">Total Transaksi</div>
+                            <div class="stat-label">Transaksi</div>
                         </div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-icon">⏳</div>
                         <div class="stat-info">
                             <div class="stat-value" id="stat-pending-commands">0</div>
-                            <div class="stat-label">Command Pending</div>
+                            <div class="stat-label">Pending</div>
                         </div>
                     </div>
                     <div class="stat-card" style="background: linear-gradient(135deg, #05966920, #10b98120); border-color: #10b981;">
                         <div class="stat-icon">🟢</div>
                         <div class="stat-info">
                             <div class="stat-value" id="stat-online-users" style="color: #10b981;">0</div>
-                            <div class="stat-label">User Online</div>
+                            <div class="stat-label">Online</div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Online Users Panel -->
                 <div class="panel-container">
                     <div class="panel-header">
                         <div class="panel-header-left">
                             <span class="panel-icon">🟢</span>
                             <div>
                                 <h2>User Online Sekarang</h2>
-                                <span class="panel-sub">Member yang sedang aktif di website</span>
+                                <span class="panel-sub">Member yang sedang aktif</span>
                             </div>
                         </div>
                     </div>
@@ -268,7 +261,6 @@
                     </div>
                 </div>
 
-                <!-- Quick Actions -->
                 <div class="panel-container">
                     <div class="panel-header">
                         <div class="panel-header-left">
@@ -282,36 +274,23 @@
                     <div class="quick-actions">
                         <button class="quick-action-btn" onclick="ui.showCommandPanel()">
                             <span>⌨</span>
-                            <div>
-                                <strong>Command Queue</strong>
-                                <small>Kelola command pending</small>
-                            </div>
+                            <div><strong>Command Queue</strong><small>Kelola command pending</small></div>
                         </button>
                         <button class="quick-action-btn" onclick="ui.showPurchasePanel()">
                             <span>📋</span>
-                            <div>
-                                <strong>Riwayat Pembelian</strong>
-                                <small>Lihat semua transaksi</small>
-                            </div>
+                            <div><strong>Riwayat Pembelian</strong><small>Lihat semua transaksi</small></div>
                         </button>
                         <button class="quick-action-btn" onclick="app.exportAllData()">
                             <span>💾</span>
-                            <div>
-                                <strong>Export Data</strong>
-                                <small>Backup database & log</small>
-                            </div>
+                            <div><strong>Export Data</strong><small>Backup database</small></div>
                         </button>
                         <button class="quick-action-btn danger" onclick="app.clearAllData()">
                             <span>🗑</span>
-                            <div>
-                                <strong>Reset Data</strong>
-                                <small>Hapus semua data (Hati-hati!)</small>
-                            </div>
+                            <div><strong>Reset Data</strong><small>Hapus semua data</small></div>
                         </button>
                     </div>
                 </div>
 
-                <!-- Member Management -->
                 <div class="panel-container">
                     <div class="panel-header">
                         <div class="panel-header-left">
@@ -322,7 +301,6 @@
                             </div>
                         </div>
                     </div>
-
                     <div class="admin-controls">
                         <div class="control-group">
                             <label>Cari Member</label>
@@ -336,88 +314,32 @@
                             <button class="btn-success" onclick="app.adminSetCoin()">SET KOIN</button>
                         </div>
                     </div>
-
                     <div class="table-wrapper">
                         <table>
                             <thead>
-                                <tr>
-                                    <th>Username</th>
-                                    <th>Role</th>
-                                    <th>Saldo Koin</th>
-                                    <th>Terdaftar</th>
-                                    <th>Aksi</th>
-                                </tr>
+                                <tr><th>Username</th><th>Role</th><th>Saldo</th><th>Terdaftar</th><th>Aksi</th></tr>
                             </thead>
                             <tbody id="user-table-body"></tbody>
                         </table>
                     </div>
                 </div>
-
-                <!-- Online Players Monitor -->
-                <div class="panel-container">
-                    <div class="panel-header">
-                        <div class="panel-header-left">
-                            <span class="panel-icon">🎮</span>
-                            <div>
-                                <h2>Monitor Server</h2>
-                                <span class="panel-sub">Status server dan player online</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="server-status">
-                        <div class="status-indicator online">
-                            <span class="status-dot"></span>
-                            <span>Server Online</span>
-                        </div>
-                        <div class="server-metrics">
-                            <div class="metric">
-                                <span class="metric-label">TPS</span>
-                                <span class="metric-value good">20.0</span>
-                            </div>
-                            <div class="metric">
-                                <span class="metric-label">RAM</span>
-                                <span class="metric-value warning">4.2GB / 8GB</span>
-                            </div>
-                            <div class="metric">
-                                <span class="metric-label">Player</span>
-                                <span class="metric-value">12 / 100</span>
-                            </div>
-                            <div class="metric">
-                                <span class="metric-label">Uptime</span>
-                                <span class="metric-value">3d 12h 45m</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </div>
         </section>
 
-        <!-- PURCHASE LOG PANEL -->
+        <!-- PURCHASE LOG -->
         <section id="purchase-panel" class="hidden fade-in">
             <div class="store-inner">
                 <div class="panel-container">
                     <div class="panel-header">
                         <div class="panel-header-left">
                             <span class="panel-icon">📋</span>
-                            <div>
-                                <h2>Riwayat Pembelian</h2>
-                                <span class="panel-sub">Semua transaksi yang telah dilakukan</span>
-                            </div>
+                            <div><h2>Riwayat Pembelian</h2><span class="panel-sub">Semua transaksi</span></div>
                         </div>
                         <button class="btn-secondary btn-sm" onclick="ui.showAdminPanel()">← Kembali</button>
                     </div>
-
                     <div class="table-wrapper">
                         <table>
-                            <thead>
-                                <tr>
-                                    <th>Waktu</th>
-                                    <th>Username</th>
-                                    <th>Item</th>
-                                    <th>Harga</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
+                            <thead><tr><th>Waktu</th><th>Username</th><th>Item</th><th>Harga</th><th>Status</th></tr></thead>
                             <tbody id="purchase-log-body"></tbody>
                         </table>
                     </div>
@@ -432,41 +354,26 @@
                     <div class="panel-header">
                         <div class="panel-header-left">
                             <span class="panel-icon">⌨</span>
-                            <div>
-                                <h2>Queue Command Server</h2>
-                                <span class="panel-sub">Command yang menunggu untuk dieksekusi di server</span>
-                            </div>
+                            <div><h2>Queue Command Server</h2><span class="panel-sub">Command yang menunggu</span></div>
                         </div>
                         <button class="btn-secondary btn-sm" onclick="ui.showAdminPanel()">← Kembali</button>
                     </div>
-
                     <div class="table-wrapper">
                         <table id="command-table">
-                            <thead>
-                                <tr>
-                                    <th>Waktu</th>
-                                    <th>Command</th>
-                                    <th>Status</th>
-                                    <th>Aksi</th>
-                                </tr>
-                            </thead>
+                            <thead><tr><th>Waktu</th><th>Command</th><th>Status</th><th>Aksi</th></tr></thead>
                             <tbody id="command-table-body"></tbody>
                         </table>
                     </div>
-
                     <div class="cmd-actions">
-                        <button class="btn-primary btn-sm" onclick="app.executeAllCommands()">▶ Execute All Auto</button>
+                        <button class="btn-primary btn-sm" onclick="app.executeAllCommands()">▶ Execute All</button>
                         <button class="btn-secondary btn-sm" onclick="app.copyAllCommands()">📋 Copy All</button>
                         <button class="btn-secondary btn-sm" onclick="app.clearAllCommands()">🗑 Clear All</button>
-                        <button class="btn-secondary btn-sm" onclick="app.exportCommands()">💾 Export JSON</button>
+                        <button class="btn-secondary btn-sm" onclick="app.exportCommands()">💾 Export</button>
                     </div>
-
                     <div class="info-box">
-                        <p>💡 <strong>Cara Execute Command:</strong></p>
-                        <p>1️⃣ Klik <strong>"Execute All Auto"</strong> untuk mengirim otomatis ke server</p>
-                        <p>2️⃣ Atau klik <strong>"Copy All"</strong> lalu paste di console server Minecraft</p>
-                        <p>3️⃣ Klik "Mark Executed" setelah berhasil dijalankan</p>
-                        <p>🎯 <strong>Tips:</strong> Gunakan "Execute All Auto" untuk menjalankan semua sekaligus!</p>
+                        <p>💡 <strong>Cara Execute:</strong></p>
+                        <p>1️⃣ Klik "Execute All" untuk kirim otomatis</p>
+                        <p>2️⃣ Atau "Copy All" lalu paste di console Minecraft</p>
                     </div>
                 </div>
             </div>
