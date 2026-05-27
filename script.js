@@ -27,36 +27,49 @@ const TurnstileManager = {
     currentTab: 'login',
     siteKey: '0x4AAAAAADWhIdBmcN5kZHEQ',
     isReady: false,
+    renderAttempts: 0,
+    maxAttempts: 10,
     
     init() {
-        // Tunggu Turnstile script load
-        if (window.turnstile) {
+        console.log('🔧 TurnstileManager.init() called');
+        
+        // Cek apakah Turnstile sudah load
+        if (window.turnstile && window.turnstile.ready) {
             this.isReady = true;
-            console.log('✅ Turnstile ready');
+            console.log('✅ Turnstile ready immediately');
+            this.render(this.currentTab);
         } else {
+            console.log('⏳ Waiting for Turnstile to load...');
             // Poll sampai ready
             const checkInterval = setInterval(() => {
+                this.renderAttempts++;
+                console.log(`Attempt ${this.renderAttempts}/${this.maxAttempts}`);
+                
                 if (window.turnstile) {
                     this.isReady = true;
                     clearInterval(checkInterval);
                     console.log('✅ Turnstile ready (delayed)');
-                    // Render widget untuk tab aktif
                     this.render(this.currentTab);
                 }
-            }, 500);
-            
-            // Timeout 10 detik
-            setTimeout(() => {
-                if (!this.isReady) {
+                
+                if (this.renderAttempts >= this.maxAttempts) {
                     clearInterval(checkInterval);
-                    console.error('❌ Turnstile failed to load');
+                    console.error('❌ Turnstile failed to load after max attempts');
                     this.showFallback();
                 }
-            }, 10000);
+            }, 500);
         }
+        
+        // Also listen for turnstile ready event
+        document.addEventListener('turnstile-ready', () => {
+            console.log('🎯 Turnstile ready event received');
+            this.isReady = true;
+            this.render(this.currentTab);
+        });
     },
     
     render(tab) {
+        console.log(`🎨 Rendering Turnstile for tab: ${tab}`);
         this.currentTab = tab;
         
         // Hapus widget lama
@@ -66,7 +79,7 @@ const TurnstileManager = {
         const container = document.getElementById(containerId);
         
         if (!container) {
-            console.error('Container not found:', containerId);
+            console.error('❌ Container not found:', containerId);
             return;
         }
         
@@ -74,32 +87,40 @@ const TurnstileManager = {
         container.innerHTML = '';
         
         if (!this.isReady || !window.turnstile) {
+            console.log('⚠️ Turnstile not ready, showing loading...');
             container.innerHTML = `
-                <div style="text-align:center;padding:16px;background:var(--bg2);border-radius:8px;border:1px solid var(--border);">
+                <div style="text-align:center;padding:16px;">
                     <div style="color:var(--text3);font-size:0.85rem;margin-bottom:8px;">⏳ Memuat verifikasi keamanan...</div>
-                    <button type="button" onclick="TurnstileManager.forceRender('${tab}')" style="padding:8px 16px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.8rem;">
+                    <button type="button" onclick="TurnstileManager.forceRender('${tab}')" 
+                        style="padding:8px 16px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.8rem;">
                         🔄 Refresh Verifikasi
                     </button>
                 </div>`;
             return;
         }
         
-        // Deteksi mobile
-        const isMobile = window.innerWidth < 768 || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        // Deteksi mobile - lebih agresif
+        const isMobile = window.innerWidth < 768 || 
+                        /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
+        console.log(`📱 Mobile detected: ${isMobile}, Width: ${window.innerWidth}`);
         
         try {
-            this.widgetId = window.turnstile.render(container, {
+            // Explicit render dengan callback
+            const renderOptions = {
                 sitekey: this.siteKey,
                 callback: (token) => {
                     app.turnstileToken = token;
-                    console.log('✅ Turnstile verified:', token.substring(0, 20) + '...');
+                    console.log('✅ Turnstile verified! Token:', token.substring(0, 20) + '...');
                 },
                 'error-callback': () => {
                     app.turnstileToken = null;
+                    console.error('❌ Turnstile error callback');
                     ui.toast('❌ Verifikasi gagal. Coba lagi.', 'error');
                 },
                 'expired-callback': () => {
                     app.turnstileToken = null;
+                    console.warn('⚠️ Turnstile expired');
                     ui.toast('⚠️ Verifikasi expired. Refresh...', 'warning');
                 },
                 theme: 'dark',
@@ -107,14 +128,19 @@ const TurnstileManager = {
                 retry: 'auto',
                 'refresh-expired': 'auto',
                 language: 'id'
-            });
+            };
+            
+            this.widgetId = window.turnstile.render(container, renderOptions);
             console.log('✅ Turnstile rendered, widgetId:', this.widgetId);
+            
         } catch(e) {
             console.error('❌ Turnstile render error:', e);
             container.innerHTML = `
-                <div style="text-align:center;padding:16px;background:var(--bg2);border-radius:8px;border:1px solid var(--border);">
+                <div style="text-align:center;padding:16px;">
                     <div style="color:#ef4444;font-size:0.85rem;margin-bottom:8px;">❌ Gagal load verifikasi</div>
-                    <button type="button" onclick="TurnstileManager.forceRender('${tab}')" style="padding:8px 16px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.8rem;">
+                    <div style="color:var(--text3);font-size:0.75rem;margin-bottom:8px;">${e.message}</div>
+                    <button type="button" onclick="TurnstileManager.forceRender('${tab}')" 
+                        style="padding:8px 16px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.8rem;">
                         🔄 Coba Lagi
                     </button>
                 </div>`;
@@ -122,6 +148,8 @@ const TurnstileManager = {
     },
     
     forceRender(tab) {
+        console.log('🔄 Force render triggered');
+        this.renderAttempts = 0;
         this.isReady = !!window.turnstile;
         this.render(tab);
     },
@@ -130,7 +158,7 @@ const TurnstileManager = {
         if (this.widgetId && window.turnstile) {
             try {
                 window.turnstile.remove(this.widgetId);
-                console.log('Turnstile removed');
+                console.log('🗑️ Turnstile removed');
             } catch(e) {
                 console.log('Turnstile remove error:', e);
             }
@@ -156,9 +184,9 @@ const TurnstileManager = {
             const el = document.getElementById(id);
             if (el) {
                 el.innerHTML = `
-                    <div style="text-align:center;padding:16px;background:var(--bg2);border-radius:8px;border:1px solid var(--border);">
+                    <div style="text-align:center;padding:16px;">
                         <div style="color:#ef4444;font-size:0.85rem;margin-bottom:8px;">⚠️ Verifikasi tidak tersedia</div>
-                        <div style="color:var(--text3);font-size:0.75rem;">Refresh halaman atau coba browser lain</div>
+                        <div style="color:var(--text3);font-size:0.75rem;">Refresh halaman atau coba browser lain (Chrome/Safari)</div>
                     </div>`;
             }
         });
@@ -174,7 +202,6 @@ const SyncEngine = {
     lastDataHash: '',
     
     init() {
-        // BroadcastChannel untuk sync antar-tab
         if (typeof BroadcastChannel !== 'undefined') {
             try {
                 this.channel = new BroadcastChannel('duskveil_sync');
@@ -184,14 +211,12 @@ const SyncEngine = {
             } catch(e) {}
         }
         
-        // Storage events
         window.addEventListener('storage', (e) => {
             if (['duskveil_db','duskveil_commands','duskveil_purchases','duskveil_online_users'].includes(e.key)) {
                 this.handleSync('storage_change', { key: e.key });
             }
         });
         
-        // Polling setiap 1 detik
         this.startPolling();
         this.trackOnline();
     },
@@ -647,7 +672,7 @@ const ui = {
             btns[0].classList.remove('active'); btns[1].classList.add('active');
         }
         // Render Turnstile setelah DOM update
-        setTimeout(() => TurnstileManager.render(tab), 100);
+        setTimeout(() => TurnstileManager.render(tab), 150);
     },
 
     renderStore: () => {
@@ -893,7 +918,6 @@ const ui = {
             // Init Turnstile setelah DOM siap
             setTimeout(() => {
                 TurnstileManager.init();
-                TurnstileManager.render('login');
             }, 300);
         } else {
             auth.classList.add('hidden');
@@ -947,6 +971,7 @@ const app = {
     turnstileToken: null,
 
     init: () => {
+        console.log('🚀 App.init() starting...');
         SyncEngine.init();
         DB.init();
         ui.renderStore();
@@ -974,6 +999,7 @@ const app = {
         }
 
         app.initParticles();
+        console.log('✅ App.init() complete');
     },
 
     initParticles: () => {
@@ -993,6 +1019,7 @@ const app = {
 
     handleLogin: async (e) => {
         e.preventDefault();
+        console.log('🔑 Login attempt...');
         
         if (!Security.checkRateLimit('login', 5, 60000)) {
             ui.toast('⛔ Terlalu banyak percobaan login. Coba lagi dalam 1 menit.', 'error');
@@ -1000,8 +1027,8 @@ const app = {
         }
 
         if (!app.turnstileToken) {
+            console.log('⚠️ No turnstile token');
             ui.toast('⚠️ Harap selesaikan verifikasi keamanan terlebih dahulu!', 'error');
-            // Re-render Turnstile
             TurnstileManager.render('login');
             return;
         }
