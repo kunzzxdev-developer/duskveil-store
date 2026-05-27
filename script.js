@@ -1,4 +1,4 @@
-fixed_js = '''const API_CONFIG = {
+const API_CONFIG = {
     apiKey: 'ptlc_fUVguzJJAugo1yh86scbFvQR5tELMlb7xv5n3XBCM2l',
     serverId: '0a090342-d608-4488-8810-11b484fb3317',
     panelUrl: 'https://panel.arqonara.com'
@@ -20,408 +20,300 @@ const SKILLS_LIST = [
 ];
 
 // ============================================
-// TURNSTILE MANAGER - FIXED FOR ALL DEVICES
+// SHARED STORAGE ENGINE
 // ============================================
-const TurnstileManager = {
-    widgetId: null,
-    currentTab: 'login',
-    siteKey: '0x4AAAAAADWhIdBmcN5kZHEQ',
-    isReady: false,
-    renderAttempts: 0,
-    maxAttempts: 10,
-    
-    init() {
-        console.log('🔧 TurnstileManager.init() called');
-        
-        // Cek apakah Turnstile sudah load
-        if (window.turnstile && window.turnstile.ready) {
-            this.isReady = true;
-            console.log('✅ Turnstile ready immediately');
-            this.render(this.currentTab);
-        } else {
-            console.log('⏳ Waiting for Turnstile to load...');
-            // Poll sampai ready
-            const checkInterval = setInterval(() => {
-                this.renderAttempts++;
-                console.log(`Attempt ${this.renderAttempts}/${this.maxAttempts}`);
-                
-                if (window.turnstile) {
-                    this.isReady = true;
-                    clearInterval(checkInterval);
-                    console.log('✅ Turnstile ready (delayed)');
-                    this.render(this.currentTab);
-                }
-                
-                if (this.renderAttempts >= this.maxAttempts) {
-                    clearInterval(checkInterval);
-                    console.error('❌ Turnstile failed to load after max attempts');
-                    this.showFallback();
-                }
-            }, 500);
-        }
-        
-        // Also listen for turnstile ready event
-        document.addEventListener('turnstile-ready', () => {
-            console.log('🎯 Turnstile ready event received');
-            this.isReady = true;
-            this.render(this.currentTab);
-        });
+// PENTING: localStorage hanya tersedia per-device/browser.
+// Untuk deteksi cross-device (HP ke PC), kita gunakan
+// pendekatan "session registry" — setiap user yang login
+// menulis data dirinya ke localStorage dengan timestamp
+// heartbeat. Admin polling setiap 2 detik membaca data ini.
+//
+// Karena semua user mengakses domain yang sama, localStorage
+// mereka berbagi key yang sama → admin di PC bisa baca
+// session yang ditulis user dari HP selama same origin.
+// ============================================
+const SharedDB = {
+    USERS_KEY:     'dv_users',
+    SESSIONS_KEY:  'dv_sessions',
+    COMMANDS_KEY:  'duskveil_commands',
+    PURCHASES_KEY: 'duskveil_purchases',
+    VERSION_KEY:   'dv_version',
+
+    _enc(data) {
+        try { return btoa(unescape(encodeURIComponent(JSON.stringify(data)))); } catch { return JSON.stringify(data); }
     },
-    
-    render(tab) {
-        console.log(`🎨 Rendering Turnstile for tab: ${tab}`);
-        this.currentTab = tab;
-        
-        // Hapus widget lama
-        this.remove();
-        
-        const containerId = tab === 'login' ? 'turnstile-login' : 'turnstile-register';
-        const container = document.getElementById(containerId);
-        
-        if (!container) {
-            console.error('❌ Container not found:', containerId);
-            return;
-        }
-        
-        // Bersihkan container
-        container.innerHTML = '';
-        
-        if (!this.isReady || !window.turnstile) {
-            console.log('⚠️ Turnstile not ready, showing loading...');
-            container.innerHTML = `
-                <div style="text-align:center;padding:16px;">
-                    <div style="color:var(--text3);font-size:0.85rem;margin-bottom:8px;">⏳ Memuat verifikasi keamanan...</div>
-                    <button type="button" onclick="TurnstileManager.forceRender('${tab}')" 
-                        style="padding:8px 16px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.8rem;">
-                        🔄 Refresh Verifikasi
-                    </button>
-                </div>`;
-            return;
-        }
-        
-        // Deteksi mobile - lebih agresif
-        const isMobile = window.innerWidth < 768 || 
-                        /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        
-        console.log(`📱 Mobile detected: ${isMobile}, Width: ${window.innerWidth}`);
-        
-        try {
-            // Explicit render dengan callback
-            const renderOptions = {
-                sitekey: this.siteKey,
-                callback: (token) => {
-                    app.turnstileToken = token;
-                    console.log('✅ Turnstile verified! Token:', token.substring(0, 20) + '...');
-                },
-                'error-callback': () => {
-                    app.turnstileToken = null;
-                    console.error('❌ Turnstile error callback');
-                    ui.toast('❌ Verifikasi gagal. Coba lagi.', 'error');
-                },
-                'expired-callback': () => {
-                    app.turnstileToken = null;
-                    console.warn('⚠️ Turnstile expired');
-                    ui.toast('⚠️ Verifikasi expired. Refresh...', 'warning');
-                },
-                theme: 'dark',
-                size: isMobile ? 'compact' : 'normal',
-                retry: 'auto',
-                'refresh-expired': 'auto',
-                language: 'id'
-            };
-            
-            this.widgetId = window.turnstile.render(container, renderOptions);
-            console.log('✅ Turnstile rendered, widgetId:', this.widgetId);
-            
-        } catch(e) {
-            console.error('❌ Turnstile render error:', e);
-            container.innerHTML = `
-                <div style="text-align:center;padding:16px;">
-                    <div style="color:#ef4444;font-size:0.85rem;margin-bottom:8px;">❌ Gagal load verifikasi</div>
-                    <div style="color:var(--text3);font-size:0.75rem;margin-bottom:8px;">${e.message}</div>
-                    <button type="button" onclick="TurnstileManager.forceRender('${tab}')" 
-                        style="padding:8px 16px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.8rem;">
-                        🔄 Coba Lagi
-                    </button>
-                </div>`;
+    _dec(str) {
+        if (!str) return null;
+        try { return JSON.parse(decodeURIComponent(escape(atob(str)))); } catch { try { return JSON.parse(str); } catch { return null; } }
+    },
+    _read(key, fallback) {
+        const raw = localStorage.getItem(key);
+        const result = this._dec(raw);
+        return result !== null ? result : fallback;
+    },
+    _write(key, data) {
+        localStorage.setItem(key, this._enc(data));
+        // Bump global version counter — ini yang polling admin deteksi
+        const v = (parseInt(localStorage.getItem(this.VERSION_KEY) || '0') + 1);
+        localStorage.setItem(this.VERSION_KEY, String(v));
+    },
+
+    getVersion()  { return parseInt(localStorage.getItem(this.VERSION_KEY) || '0'); },
+
+    // USERS
+    getUsers()    { return this._read(this.USERS_KEY, { users: [] }).users || []; },
+    saveUsers(u)  { this._write(this.USERS_KEY, { users: u }); },
+
+    // ONLINE SESSIONS — key = username, value = { username, role, loginAt, lastSeen }
+    // Setiap browser/device yang login menulis ke sini. Admin baca semua entries.
+    getSessions() { return this._read(this.SESSIONS_KEY, {}) || {}; },
+    saveSessions(s) { this._write(this.SESSIONS_KEY, s); },
+
+    registerSession(username, role) {
+        const sessions = this.getSessions();
+        sessions[username] = { username, role, loginAt: Date.now(), lastSeen: Date.now() };
+        this.saveSessions(sessions);
+    },
+    heartbeat(username) {
+        const sessions = this.getSessions();
+        if (sessions[username]) {
+            sessions[username].lastSeen = Date.now();
+            // Tulis langsung ke localStorage tanpa bump version besar
+            // agar tidak trigger false-positive di admin
+            localStorage.setItem(this.SESSIONS_KEY, this._enc(sessions));
         }
     },
-    
-    forceRender(tab) {
-        console.log('🔄 Force render triggered');
-        this.renderAttempts = 0;
-        this.isReady = !!window.turnstile;
-        this.render(tab);
+    removeSession(username) {
+        const sessions = this.getSessions();
+        delete sessions[username];
+        this.saveSessions(sessions);
     },
-    
-    remove() {
-        if (this.widgetId && window.turnstile) {
-            try {
-                window.turnstile.remove(this.widgetId);
-                console.log('🗑️ Turnstile removed');
-            } catch(e) {
-                console.log('Turnstile remove error:', e);
-            }
-            this.widgetId = null;
-        }
-        app.turnstileToken = null;
+    getOnlineSessions() {
+        const sessions = this.getSessions();
+        const cutoff = Date.now() - 20000; // 20 detik timeout
+        return Object.values(sessions).filter(s => s.lastSeen > cutoff);
     },
-    
-    reset() {
-        if (this.widgetId && window.turnstile) {
-            try {
-                window.turnstile.reset(this.widgetId);
-            } catch(e) {
-                console.log('Turnstile reset error:', e);
-            }
-        }
-        app.turnstileToken = null;
-    },
-    
-    showFallback() {
-        const containers = ['turnstile-login', 'turnstile-register'];
-        containers.forEach(id => {
-            const el = document.getElementById(id);
-            if (el) {
-                el.innerHTML = `
-                    <div style="text-align:center;padding:16px;">
-                        <div style="color:#ef4444;font-size:0.85rem;margin-bottom:8px;">⚠️ Verifikasi tidak tersedia</div>
-                        <div style="color:var(--text3);font-size:0.75rem;">Refresh halaman atau coba browser lain (Chrome/Safari)</div>
-                    </div>`;
-            }
-        });
-    }
+
+    // PURCHASES & COMMANDS
+    getPurchases()    { return this._read(this.PURCHASES_KEY, []) || []; },
+    savePurchases(d)  { this._write(this.PURCHASES_KEY, d); },
+    getCommands()     { return this._read(this.COMMANDS_KEY, []) || []; },
+    saveCommands(d)   { this._write(this.COMMANDS_KEY, d); }
 };
 
 // ============================================
-// CROSS-DEVICE SYNC ENGINE
+// SYNC ENGINE — deteksi perubahan real-time
 // ============================================
 const SyncEngine = {
     channel: null,
-    syncInterval: null,
-    lastDataHash: '',
-    
+    lastVersion: -1,
+    knownUsers: new Set(),
+    knownOnline: new Set(),
+
     init() {
+        // BroadcastChannel: instant sync antar tab di browser/device yang sama
         if (typeof BroadcastChannel !== 'undefined') {
-            try {
-                this.channel = new BroadcastChannel('duskveil_sync');
-                this.channel.onmessage = (event) => {
-                    this.handleSync(event.data.type, event.data.data);
-                };
-            } catch(e) {}
+            this.channel = new BroadcastChannel('duskveil_sync');
+            this.channel.onmessage = (e) => this._onMessage(e.data);
         }
-        
+
+        // StorageEvent: cross-tab same-device (Firefox, Chrome multi-tab)
         window.addEventListener('storage', (e) => {
-            if (['duskveil_db','duskveil_commands','duskveil_purchases','duskveil_online_users'].includes(e.key)) {
-                this.handleSync('storage_change', { key: e.key });
+            if ([SharedDB.VERSION_KEY, SharedDB.SESSIONS_KEY, SharedDB.USERS_KEY].includes(e.key)) {
+                this._refresh();
             }
         });
-        
-        this.startPolling();
-        this.trackOnline();
+
+        // Polling 2 detik — backbone utama untuk cross-device detection
+        this.lastVersion = SharedDB.getVersion();
+        this.knownUsers = new Set(SharedDB.getUsers().map(u => u.username));
+        this.knownOnline = new Set(SharedDB.getOnlineSessions().map(s => s.username));
+
+        setInterval(() => this._poll(), 2000);
+
+        // Heartbeat 5 detik agar user tidak dianggap offline
+        setInterval(() => {
+            const user = app._getUser();
+            if (user) SharedDB.heartbeat(user.username);
+        }, 5000);
     },
-    
-    getDataHash() {
-        const users = DB.getUsers();
-        const commands = CommandQueue.getAll();
-        const purchases = PurchaseLog.getAll();
-        return JSON.stringify({
-            userCount: users.length,
-            userNames: users.map(u => u.username).sort().join(','),
-            cmdCount: commands.length,
-            cmdPending: commands.filter(c => c.status === 'pending').length,
-            purchaseCount: purchases.length
-        });
+
+    _poll() {
+        const currentVer = SharedDB.getVersion();
+        if (currentVer === this.lastVersion) {
+            // Version sama tapi cek online sessions tetap (heartbeat tidak bump version besar)
+            this._checkOnlineChanges();
+            return;
+        }
+        this.lastVersion = currentVer;
+        this._refresh();
     },
-    
-    handleSync(type, data) {
+
+    _checkOnlineChanges() {
+        // Cek perubahan online tanpa full refresh — efisien
         const session = sessionStorage.getItem('duskveil_session');
         if (!session) return;
         const user = JSON.parse(session);
-        
+        if (user.role !== 'admin') return;
+
+        const currentOnline = new Set(SharedDB.getOnlineSessions().map(s => s.username));
+        const added   = [...currentOnline].filter(u => !this.knownOnline.has(u));
+        const removed = [...this.knownOnline].filter(u => !currentOnline.has(u));
+
+        if (added.length > 0 || removed.length > 0) {
+            this.knownOnline = currentOnline;
+            ui.renderOnlinePlayers();
+            ui.updateStats();
+            added.forEach(u => {
+                const sessions = SharedDB.getSessions();
+                const isNew = sessions[u] && (Date.now() - sessions[u].loginAt) < 10000;
+                if (isNew) ui.toast(`🟢 "${u}" baru saja login!`, 'info');
+            });
+        }
+    },
+
+    _refresh() {
+        const session = sessionStorage.getItem('duskveil_session');
+        if (!session) return;
+        const user = JSON.parse(session);
+
         if (user.role === 'admin') {
+            // Cek user baru terdaftar
+            const currentUsers = new Set(SharedDB.getUsers().map(u => u.username));
+            const newUsers = [...currentUsers].filter(u => !this.knownUsers.has(u));
+            newUsers.forEach(u => ui.toast(`🎉 Member baru "${u}" berhasil daftar!`, 'success'));
+            this.knownUsers = currentUsers;
+
+            // Refresh semua panel
             ui.renderAdminTable();
+            ui.renderOnlinePlayers();
             ui.updateStats();
             ui.updateAdminBadge();
-            ui.renderOnlineUsers();
-            
-            if (type === 'user_login' && data?.username && data.username !== user.username) {
-                ui.toast(`🔔 "${data.username}" baru saja login!`, 'info');
-            }
-            if (type === 'user_register' && data?.username) {
-                ui.toast(`🎉 Member baru "${data.username}" mendaftar!`, 'success');
-            }
-            if (type === 'purchase' && data && data.username !== user.username) {
-                ui.toast(`💰 ${data.username} membeli ${data.itemName}`, 'info');
-            }
-        }
-        
-        if (user.role === 'member' && type === 'coin_updated' && data?.username === user.username) {
-            const fresh = DB.getUser(user.username);
-            if (fresh) {
-                const newSess = { ...fresh, token: user.token, loginAt: user.loginAt };
-                sessionStorage.setItem('duskveil_session', JSON.stringify(newSess));
+
+            // Update panel yang sedang aktif
+            if (!document.getElementById('purchase-panel')?.classList.contains('hidden')) ui.renderPurchaseLog();
+            if (!document.getElementById('command-panel')?.classList.contains('hidden')) ui.renderCommandTable();
+        } else {
+            // Update koin user jika diubah admin
+            const freshUser = SharedDB.getUsers().find(u => u.username === user.username);
+            if (freshUser && freshUser.coin !== user.coin) {
+                const updated = { ...user, coin: freshUser.coin };
+                sessionStorage.setItem('duskveil_session', JSON.stringify(updated));
                 ui.updateHeader();
-                if (data.byAdmin) {
-                    ui.toast(`💰 Saldo diperbarui: ${fresh.coin.toLocaleString()} koin!`, 'success');
-                }
+                ui.toast(`💰 Saldo diperbarui admin: ${freshUser.coin.toLocaleString()} koin`, 'success');
             }
         }
     },
-    
+
+    _onMessage({ type, data }) {
+        const session = sessionStorage.getItem('duskveil_session');
+        if (!session) return;
+        const user = JSON.parse(session);
+        if (user.role === 'admin') {
+            if (type === 'purchase') ui.toast(`💰 Pembelian: ${data.itemName} oleh ${data.username}`, 'info');
+        }
+        this._refresh();
+    },
+
     broadcast(type, data) {
-        const payload = { type, data, timestamp: Date.now() };
-        if (this.channel) {
-            try { this.channel.postMessage(payload); } catch(e) {}
-        }
-        localStorage.setItem('duskveil_last_sync', Date.now().toString());
-    },
-    
-    trackOnline() {
-        const update = () => {
-            const session = sessionStorage.getItem('duskveil_session');
-            if (!session) return;
-            const user = JSON.parse(session);
-            let online = JSON.parse(localStorage.getItem('duskveil_online_users') || '[]');
-            online = online.filter(u => u.username !== user.username);
-            online.push({ username: user.username, role: user.role, lastSeen: Date.now() });
-            online = online.filter(u => (Date.now() - u.lastSeen) < 30000);
-            localStorage.setItem('duskveil_online_users', JSON.stringify(online));
-        };
-        
-        update();
-        setInterval(update, 5000);
-        
-        window.addEventListener('beforeunload', () => {
-            const session = sessionStorage.getItem('duskveil_session');
-            if (session) {
-                const user = JSON.parse(session);
-                let online = JSON.parse(localStorage.getItem('duskveil_online_users') || '[]');
-                online = online.filter(u => u.username !== user.username);
-                localStorage.setItem('duskveil_online_users', JSON.stringify(online));
-            }
-        });
-    },
-    
-    startPolling() {
-        this.syncInterval = setInterval(() => {
-            const currentHash = this.getDataHash();
-            if (currentHash !== this.lastDataHash) {
-                this.lastDataHash = currentHash;
-                this.handleSync('storage_change', {});
-            }
-            
-            const session = sessionStorage.getItem('duskveil_session');
-            if (session) {
-                const user = JSON.parse(session);
-                if (user.role === 'admin') {
-                    ui.renderOnlineUsers();
-                }
-            }
-        }, 1000);
+        if (this.channel) this.channel.postMessage({ type, data, ts: Date.now() });
     }
 };
 
 // ============================================
-// SECURITY
+// SECURITY UTILITIES
 // ============================================
 const Security = {
-    sanitize: (str) => {
+    sanitize(str) {
         if (!str) return '';
         const div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
     },
-    validateUsername: (username) => /^[a-zA-Z0-9_]{3,16}$/.test(username),
-    validatePassword: (password) => password.length >= 6,
+    validateUsername: (u) => /^[a-zA-Z0-9_]{3,16}$/.test(u),
+    validatePassword: (p) => p.length >= 6,
     rateLimiter: {},
-    checkRateLimit: (action, maxAttempts = 5, windowMs = 60000) => {
+    checkRateLimit(action, max = 5, windowMs = 60000) {
         const now = Date.now();
-        if (!Security.rateLimiter[action]) {
-            Security.rateLimiter[action] = { attempts: 1, firstAttempt: now };
-            return true;
-        }
-        const record = Security.rateLimiter[action];
-        if (now - record.firstAttempt > windowMs) {
-            record.attempts = 1;
-            record.firstAttempt = now;
-            return true;
-        }
-        if (record.attempts >= maxAttempts) return false;
-        record.attempts++;
+        if (!this.rateLimiter[action]) { this.rateLimiter[action] = { attempts: 1, first: now }; return true; }
+        const r = this.rateLimiter[action];
+        if (now - r.first > windowMs) { r.attempts = 1; r.first = now; return true; }
+        if (r.attempts >= max) return false;
+        r.attempts++;
         return true;
     },
-    generateToken: () => Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join('')
+    generateToken() {
+        return Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
 };
 
 // ============================================
-// PTERODACTYL API
+// TURNSTILE MANAGER
+// ============================================
+const TurnstileManager = {
+    widgetId: null,
+    siteKey: '0x4AAAAAADWhIdBmcN5kZHEQ',
+    render(tab) {
+        this.remove();
+        const id = tab === 'login' ? 'turnstile-login' : 'turnstile-register';
+        const container = document.getElementById(id);
+        if (!container) return;
+        container.innerHTML = '';
+        if (window.turnstile) {
+            this.widgetId = window.turnstile.render(container, {
+                sitekey: this.siteKey,
+                callback: (token) => { app.turnstileToken = token; },
+                'error-callback': () => { app.turnstileToken = null; ui.toast('❌ Verifikasi gagal, coba lagi.', 'error'); },
+                theme: 'dark', size: 'normal'
+            });
+        } else {
+            container.innerHTML = '<div style="color:var(--text3);font-size:0.78rem;text-align:center;padding:12px;">⏳ Memuat verifikasi...</div>';
+        }
+    },
+    remove() {
+        if (this.widgetId && window.turnstile) { try { window.turnstile.remove(this.widgetId); } catch(e) {} this.widgetId = null; }
+        app.turnstileToken = null;
+    },
+    reset() {
+        if (this.widgetId && window.turnstile) { try { window.turnstile.reset(this.widgetId); } catch(e) {} }
+        app.turnstileToken = null;
+    }
+};
+
+// ============================================
+// PTERODACTYL AUTO-EXECUTE
 // ============================================
 const PterodactylAPI = {
-    sendCommand: async (command) => {
+    async sendCommand(command) {
         try {
-            const wsRes = await fetch(
-                `${API_CONFIG.panelUrl}/api/client/servers/${API_CONFIG.serverId}/websocket`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${API_CONFIG.apiKey}`,
-                        'Accept': 'application/json',
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
-
-            if (!wsRes.ok) {
-                const err = await wsRes.text();
-                console.error('WS credentials error:', err);
-                return { success: false, error: `HTTP ${wsRes.status}` };
-            }
-
-            const wsData = await wsRes.json();
-            const { token, socket: wsUrl } = wsData.data;
-
+            const wsRes = await fetch(`${API_CONFIG.panelUrl}/api/client/servers/${API_CONFIG.serverId}/websocket`, {
+                headers: { 'Authorization': `Bearer ${API_CONFIG.apiKey}`, 'Accept': 'application/json', 'Content-Type': 'application/json' }
+            });
+            if (!wsRes.ok) return { success: false, error: `HTTP ${wsRes.status}` };
+            const { data: { token, socket: wsUrl } } = await wsRes.json();
             return new Promise((resolve) => {
                 const ws = new WebSocket(wsUrl);
-                let timeout = setTimeout(() => {
-                    ws.close();
-                    resolve({ success: false, error: 'WebSocket timeout (10s)' });
-                }, 10000);
-
-                ws.onopen = () => {
-                    ws.send(JSON.stringify({ event: 'auth', args: [token] }));
-                };
-
+                let timeout = setTimeout(() => { ws.close(); resolve({ success: false, error: 'Timeout 10s' }); }, 10000);
+                ws.onopen = () => ws.send(JSON.stringify({ event: 'auth', args: [token] }));
                 ws.onmessage = (e) => {
                     const msg = JSON.parse(e.data);
                     if (msg.event === 'auth success') {
                         ws.send(JSON.stringify({ event: 'send command', args: [command] }));
                         clearTimeout(timeout);
-                        setTimeout(() => {
-                            ws.close();
-                            resolve({ success: true });
-                        }, 800);
+                        setTimeout(() => { ws.close(); resolve({ success: true }); }, 800);
                     }
-                    if (msg.event === 'token expired' || msg.event === 'jwt error') {
-                        clearTimeout(timeout);
-                        ws.close();
-                        resolve({ success: false, error: 'Token expired' });
-                    }
+                    if (msg.event === 'token expired' || msg.event === 'jwt error') { clearTimeout(timeout); ws.close(); resolve({ success: false, error: 'Token expired' }); }
                 };
-                ws.onerror = () => {
-                    clearTimeout(timeout);
-                    resolve({ success: false, error: 'WebSocket error' });
-                };
+                ws.onerror = () => { clearTimeout(timeout); resolve({ success: false, error: 'WS error' }); };
             });
-        } catch (err) {
-            return { success: false, error: err.message };
-        }
+        } catch(err) { return { success: false, error: err.message }; }
     },
-    sendCommands: async (commands) => {
+    async sendCommands(commands) {
         const results = [];
         for (const cmd of commands) {
-            const res = await PterodactylAPI.sendCommand(cmd);
-            results.push({ command: cmd, ...res });
-            if (!res.success) break;
+            const r = await this.sendCommand(cmd);
+            results.push({ command: cmd, ...r });
+            if (!r.success) break;
             await new Promise(r => setTimeout(r, 400));
         }
         return results;
@@ -431,64 +323,27 @@ const PterodactylAPI = {
 // ============================================
 // COMMAND QUEUE
 // ============================================
-class CommandQueue {
-    static getAll() {
-        try { return JSON.parse(localStorage.getItem('duskveil_commands') || '[]'); }
-        catch { return []; }
-    }
-    static save(cmds) {
-        localStorage.setItem('duskveil_commands', JSON.stringify(cmds));
-        SyncEngine.broadcast('command_added', { count: cmds.length });
-    }
-    static add(command, username, itemName, autoSent = false) {
+const CommandQueue = {
+    getAll()   { return SharedDB.getCommands(); },
+    save(cmds) { SharedDB.saveCommands(cmds); SyncEngine.broadcast('command_added', { count: cmds.length }); },
+    add(command, username, itemName, autoSent = false) {
         const cmds = this.getAll();
-        cmds.push({
-            id: Date.now() + Math.random(),
-            command: Security.sanitize(command),
-            username: Security.sanitize(username),
-            itemName: Security.sanitize(itemName),
-            timestamp: new Date().toISOString(),
-            status: autoSent ? 'executed' : 'pending',
-            autoSent
-        });
+        cmds.push({ id: Date.now() + Math.random(), command: Security.sanitize(command), username: Security.sanitize(username), itemName: Security.sanitize(itemName), timestamp: new Date().toISOString(), status: autoSent ? 'executed' : 'pending', autoSent });
         if (cmds.length > 500) cmds.shift();
         this.save(cmds);
-    }
-    static markExecuted(id) {
-        const cmds = this.getAll();
-        const c = cmds.find(c => c.id === id);
-        if (c) c.status = 'executed';
-        this.save(cmds);
-    }
-    static markFailed(id) {
-        const cmds = this.getAll();
-        const c = cmds.find(c => c.id === id);
-        if (c) c.status = 'failed';
-        this.save(cmds);
-    }
-    static delete(id) {
-        this.save(this.getAll().filter(c => c.id !== id));
-    }
-    static clearAll() {
-        localStorage.setItem('duskveil_commands', '[]');
-        SyncEngine.broadcast('command_added', { count: 0 });
-    }
-    static getPending() {
-        return this.getAll().filter(c => c.status === 'pending');
-    }
-}
+    },
+    markExecuted(id) { const c = this.getAll(); const x = c.find(x => x.id === id); if (x) x.status = 'executed'; this.save(c); },
+    markFailed(id)   { const c = this.getAll(); const x = c.find(x => x.id === id); if (x) x.status = 'failed'; this.save(c); },
+    delete(id)       { this.save(this.getAll().filter(c => c.id !== id)); },
+    clearAll()       { SharedDB.saveCommands([]); SyncEngine.broadcast('command_added', { count: 0 }); },
+    getPending()     { return this.getAll().filter(c => c.status === 'pending'); }
+};
 
 // ============================================
 // PURCHASE LOG
 // ============================================
 const PurchaseLog = {
-    getAll() {
-        try { return JSON.parse(localStorage.getItem('duskveil_purchases') || '[]'); }
-        catch { return []; }
-    },
-    save(data) {
-        localStorage.setItem('duskveil_purchases', JSON.stringify(data));
-    },
+    getAll() { return SharedDB.getPurchases(); },
     add(username, itemName, price, commands, autoExecuted = false) {
         const all = this.getAll();
         const entry = {
@@ -501,121 +356,61 @@ const PurchaseLog = {
             timestamp: new Date().toISOString()
         };
         all.unshift(entry);
-        this.save(all.slice(0, 200));
+        SharedDB.savePurchases(all.slice(0, 200));
         SyncEngine.broadcast('purchase', entry);
     },
-    getRecent(n = 50) {
-        return this.getAll().slice(0, n);
-    }
+    getRecent(n = 50) { return this.getAll().slice(0, n); }
 };
 
 // ============================================
 // DATABASE
 // ============================================
 const DB = {
-    encrypt: (data) => {
-        try { return btoa(JSON.stringify(data)); }
-        catch { return JSON.stringify(data); }
-    },
-    decrypt: (str) => {
-        try { return JSON.parse(atob(str)); }
-        catch {
-            try { return JSON.parse(str); }
-            catch { return { users: [] }; }
+    init() {
+        let users = SharedDB.getUsers();
+        if (!users.find(u => u.username === ADMIN_CONFIG.username)) {
+            users.push({ username: ADMIN_CONFIG.username, password: ADMIN_CONFIG.password, role: 'admin', coin: 999999, createdAt: new Date().toISOString() });
         }
-    },
-    getKey: () => {
-        const stored = localStorage.getItem('duskveil_db');
-        return stored ? DB.decrypt(stored) : { users: [] };
-    },
-    save: (data) => {
-        localStorage.setItem('duskveil_db', DB.encrypt(data));
-        localStorage.setItem('duskveil_last_sync', Date.now().toString());
-    },
-    init: () => {
-        let data = DB.getKey();
-        if (!data.users) data.users = [];
-        if (!data.users.find(u => u.username === ADMIN_CONFIG.username)) {
-            data.users.push({
-                username: ADMIN_CONFIG.username,
-                password: ADMIN_CONFIG.password,
-                role: 'admin',
-                coin: 999999,
-                createdAt: new Date().toISOString()
-            });
+        if (!users.find(u => u.username === 'player1')) {
+            users.push({ username: 'player1', password: 'player1', role: 'member', coin: 50000, createdAt: new Date().toISOString() });
         }
-        if (!data.users.find(u => u.username === 'player1')) {
-            data.users.push({
-                username: 'player1',
-                password: 'player1',
-                role: 'member',
-                coin: 50000,
-                createdAt: new Date().toISOString()
-            });
-        }
-        DB.save(data);
+        SharedDB.saveUsers(users);
     },
-    getUsers: () => DB.getKey().users || [],
-    login: (u, p) => {
-        const user = DB.getKey().users.find(x => x.username === u && x.password === p);
+    getUsers()  { return SharedDB.getUsers(); },
+    login(u, p) {
+        const user = SharedDB.getUsers().find(x => x.username === u && x.password === p);
         if (user) {
             const token = Security.generateToken();
-            const userData = { ...user, token, loginAt: new Date().toISOString() };
-            SyncEngine.broadcast('user_login', { username: u, role: user.role, timestamp: Date.now() });
-            return { success: true, user: userData };
+            // Tulis session ke SharedDB — ini yang admin baca lintas device
+            SharedDB.registerSession(u, user.role);
+            SyncEngine.broadcast('user_login', { username: u, role: user.role, ts: Date.now() });
+            return { success: true, user: { ...user, token, loginAt: new Date().toISOString() } };
         }
         return { success: false, message: 'Username atau password salah.' };
     },
-    register: (u, p) => {
-        if (!Security.validateUsername(u)) {
-            return { success: false, message: 'Username hanya boleh huruf, angka, underscore (3-16 karakter).' };
-        }
-        if (!Security.validatePassword(p)) {
-            return { success: false, message: 'Password minimal 6 karakter.' };
-        }
-        const data = DB.getKey();
+    register(u, p) {
+        if (!Security.validateUsername(u)) return { success: false, message: 'Username hanya huruf, angka, underscore (3-16 karakter).' };
+        if (!Security.validatePassword(p)) return { success: false, message: 'Password minimal 6 karakter.' };
+        const users = SharedDB.getUsers();
         if (u === ADMIN_CONFIG.username) return { success: false, message: 'Username terlindungi.' };
-        if (data.users.find(x => x.username === u)) return { success: false, message: 'Username sudah ada.' };
-        
-        const newUser = {
-            username: u,
-            password: p,
-            role: 'member',
-            coin: 1000,
-            createdAt: new Date().toISOString()
-        };
-        data.users.push(newUser);
-        DB.save(data);
-        
-        SyncEngine.broadcast('user_register', { username: u, timestamp: Date.now() });
+        if (users.find(x => x.username === u)) return { success: false, message: 'Username sudah ada.' };
+        users.push({ username: u, password: p, role: 'member', coin: 1000, createdAt: new Date().toISOString() });
+        SharedDB.saveUsers(users);
+        SyncEngine.broadcast('user_register', { username: u, ts: Date.now() });
         return { success: true };
     },
-    updateUserCoin: (username, newCoin) => {
-        const data = DB.getKey();
-        const idx = data.users.findIndex(u => u.username === username);
-        if (idx !== -1) {
-            data.users[idx].coin = Math.max(0, parseInt(newCoin) || 0);
-            DB.save(data);
-            
-            SyncEngine.broadcast('coin_updated', { 
-                username, 
-                coin: data.users[idx].coin,
-                byAdmin: true 
-            });
-            
-            const session = sessionStorage.getItem('duskveil_session');
-            if (session) {
-                let s = JSON.parse(session);
-                if (s.username === username) {
-                    s.coin = data.users[idx].coin;
-                    sessionStorage.setItem('duskveil_session', JSON.stringify(s));
-                }
-            }
-            return true;
-        }
-        return false;
+    updateUserCoin(username, newCoin) {
+        const users = SharedDB.getUsers();
+        const idx = users.findIndex(u => u.username === username);
+        if (idx === -1) return false;
+        users[idx].coin = Math.max(0, parseInt(newCoin) || 0);
+        SharedDB.saveUsers(users);
+        SyncEngine.broadcast('coin_updated', { username, coin: users[idx].coin, byAdmin: true });
+        const session = sessionStorage.getItem('duskveil_session');
+        if (session) { let s = JSON.parse(session); if (s.username === username) { s.coin = users[idx].coin; sessionStorage.setItem('duskveil_session', JSON.stringify(s)); } }
+        return true;
     },
-    getUser: (username) => DB.getKey().users.find(u => u.username === username)
+    getUser(username) { return SharedDB.getUsers().find(u => u.username === username); }
 };
 
 // ============================================
@@ -623,23 +418,18 @@ const DB = {
 // ============================================
 async function processCommands(commands, username, itemName, price) {
     const cmdArray = Array.isArray(commands) ? commands : [commands];
-    ui.toast(`⏳ Mengirim command ke server...`, 'info');
-
+    ui.toast('⏳ Mengirim command ke server...', 'info');
     const results = await PterodactylAPI.sendCommands(cmdArray);
     const allOk = results.every(r => r.success);
-
     if (allOk) {
         cmdArray.forEach(cmd => CommandQueue.add(cmd, username, itemName, true));
         PurchaseLog.add(username, itemName, price, cmdArray, true);
-        ui.toast(`✅ Command berhasil dikirim otomatis ke server!`, 'success');
+        ui.toast('✅ Command berhasil dikirim otomatis!', 'success');
     } else {
-        const failedIdx = results.findIndex(r => !r.success);
-        console.warn('Auto-execute gagal:', results[failedIdx]?.error);
         cmdArray.forEach(cmd => CommandQueue.add(cmd, username, itemName, false));
         PurchaseLog.add(username, itemName, price, cmdArray, false);
-        ui.toast(`⚠️ Auto-execute gagal. Command disimpan di Queue.`, 'error');
+        ui.toast('⚠️ Auto-execute gagal. Command disimpan di Queue — paste manual.', 'error');
     }
-
     ui.updateAdminBadge();
     ui.renderCommandTable();
     ui.renderPurchaseLog();
@@ -650,9 +440,8 @@ async function processCommands(commands, username, itemName, price) {
 // UI CONTROLLER
 // ============================================
 const ui = {
-    toast: (msg, type = 'success') => {
+    toast(msg, type = 'success') {
         const box = document.getElementById('toast-box');
-        if (!box) return;
         const div = document.createElement('div');
         div.className = `toast ${type}`;
         div.innerHTML = `<span>${Security.sanitize(msg)}</span><span style="cursor:pointer;font-size:1.1rem;opacity:.6" onclick="this.parentElement.remove()">×</span>`;
@@ -660,22 +449,16 @@ const ui = {
         setTimeout(() => div.remove(), 5000);
     },
 
-    switchTab: (tab) => {
+    switchTab(tab) {
         const lf = document.getElementById('form-login');
         const rf = document.getElementById('form-register');
         const btns = document.querySelectorAll('.tab-btn');
-        if (tab === 'login') {
-            lf.classList.remove('hidden'); rf.classList.add('hidden');
-            btns[0].classList.add('active'); btns[1].classList.remove('active');
-        } else {
-            lf.classList.add('hidden'); rf.classList.remove('hidden');
-            btns[0].classList.remove('active'); btns[1].classList.add('active');
-        }
-        // Render Turnstile setelah DOM update
-        setTimeout(() => TurnstileManager.render(tab), 150);
+        if (tab === 'login') { lf.classList.remove('hidden'); rf.classList.add('hidden'); btns[0].classList.add('active'); btns[1].classList.remove('active'); }
+        else { lf.classList.add('hidden'); rf.classList.remove('hidden'); btns[0].classList.remove('active'); btns[1].classList.add('active'); }
+        TurnstileManager.render(tab);
     },
 
-    renderStore: () => {
+    renderStore() {
         const products = {
             kontrak: [
                 { name: 'Basic Contract', price: 10000, smallName: 'basic' },
@@ -695,7 +478,6 @@ const ui = {
                 { name: 'All Skills Max', price: 100000, type: 'all' }
             ]
         };
-
         const createCard = (cat, item) => {
             let onclick = '';
             if (cat === 'skill') onclick = item.type === 'single' ? `app.showSkillSelection(${item.price})` : `app.buyAllSkills(${item.price})`;
@@ -703,152 +485,114 @@ const ui = {
             if (cat === 'rank') onclick = `app.buyRank('${item.name}',${item.price},'${item.rankName}')`;
             const icon = cat === 'kontrak' ? '📜' : cat === 'rank' ? '👑' : '⚔️';
             const type = cat === 'kontrak' ? 'Buku Kontrak' : cat === 'rank' ? 'Rank Server' : 'Skill';
-            return `
-                <div class="card">
-                    <div class="card-img">${icon}</div>
-                    <div class="card-content">
-                        <div class="card-title">${Security.sanitize(item.name)}</div>
-                        <div class="card-type">${type}</div>
-                        <div class="card-price">${item.price.toLocaleString()} 🪙</div>
-                        <button class="btn-buy" onclick="${onclick}">BELI SEKARANG</button>
-                    </div>
-                </div>`;
+            return `<div class="card"><div class="card-img">${icon}</div><div class="card-content"><div class="card-title">${Security.sanitize(item.name)}</div><div class="card-type">${type}</div><div class="card-price">${item.price.toLocaleString()} 🪙</div><button class="btn-buy" onclick="${onclick}">BELI SEKARANG</button></div></div>`;
         };
-
-        const kontrakGrid = document.getElementById('grid-kontrak');
-        const rankGrid = document.getElementById('grid-rank');
-        const skillGrid = document.getElementById('grid-skill');
-        
-        if (kontrakGrid) kontrakGrid.innerHTML = products.kontrak.map(i => createCard('kontrak', i)).join('');
-        if (rankGrid) rankGrid.innerHTML = products.rank.map(i => createCard('rank', i)).join('');
-        if (skillGrid) skillGrid.innerHTML = products.skill.map(i => createCard('skill', i)).join('');
+        const kg = document.getElementById('grid-kontrak'); if (kg) kg.innerHTML = products.kontrak.map(i => createCard('kontrak', i)).join('');
+        const rg = document.getElementById('grid-rank');    if (rg) rg.innerHTML = products.rank.map(i => createCard('rank', i)).join('');
+        const sg = document.getElementById('grid-skill');   if (sg) sg.innerHTML = products.skill.map(i => createCard('skill', i)).join('');
     },
 
-    renderAdminTable: () => {
+    renderAdminTable() {
         const tbody = document.getElementById('user-table-body');
         if (!tbody) return;
         const users = DB.getUsers();
-        const onlineUsers = JSON.parse(localStorage.getItem('duskveil_online_users') || '[]');
-        const now = Date.now();
-        
-        if (users.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);">📭 Tidak ada member</td></tr>';
-            return;
-        }
-        
-        tbody.innerHTML = users.map(u => {
-            const isOnline = onlineUsers.some(o => o.username === u.username && (now - o.lastSeen) < 30000);
-            const onlineDot = isOnline 
-                ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;box-shadow:0 0 6px #10b981;margin-right:6px;"></span>'
-                : '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--text3);margin-right:6px;"></span>';
-            
-            return `
+        if (users.length === 0) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);">📭 Tidak ada member</td></tr>'; return; }
+        tbody.innerHTML = users.map(u => `
             <tr>
-                <td>${onlineDot}${Security.sanitize(u.username)}</td>
+                <td>${Security.sanitize(u.username)}</td>
                 <td><span class="status-badge ${u.role === 'admin' ? 'status-admin' : 'status-member'}">${u.role.toUpperCase()}</span></td>
                 <td style="color:var(--gold);">${(u.coin || 0).toLocaleString()}</td>
                 <td style="font-size:0.78rem;color:var(--text3);">${u.createdAt ? new Date(u.createdAt).toLocaleDateString('id-ID') : '-'}</td>
-                <td><button class="btn-tbl-edit" onclick="app.fillAdmin('${u.username}',${u.coin || 0})">Edit</button></td>
-            </tr>`;
-        }).join('');
-    },
-    
-    renderOnlineUsers: () => {
-        const container = document.getElementById('online-users-list');
-        if (!container) return;
-        
-        const onlineUsers = JSON.parse(localStorage.getItem('duskveil_online_users') || '[]');
-        const now = Date.now();
-        const activeUsers = onlineUsers.filter(u => (now - u.lastSeen) < 30000);
-        
-        if (activeUsers.length === 0) {
-            container.innerHTML = '<div style="color:var(--text3);font-size:0.85rem;text-align:center;padding:12px;">Tidak ada user online</div>';
-            return;
-        }
-        
-        container.innerHTML = activeUsers.map(u => `
-            <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg2);border-radius:8px;border:1px solid var(--border);">
-                <div style="width:10px;height:10px;border-radius:50%;background:#10b981;box-shadow:0 0 8px #10b981;animation:pulse 2s infinite;"></div>
-                <span style="font-weight:600;font-size:0.9rem;">${Security.sanitize(u.username)}</span>
-                <span style="font-size:0.7rem;color:var(--text3);margin-left:auto;padding:2px 8px;background:var(--bg);border-radius:4px;">${u.role === 'admin' ? '👑 Admin' : '👤 Member'}</span>
-            </div>
-        `).join('');
+                <td><button class="btn-tbl-edit" onclick="app.fillAdmin('${Security.sanitize(u.username)}',${u.coin || 0})">Edit</button></td>
+            </tr>`).join('');
     },
 
-    renderPurchaseLog: () => {
+    // Render daftar user online real-time di panel admin
+    renderOnlinePlayers() {
+        const container = document.getElementById('online-players-list');
+        if (!container) return;
+        const online = SharedDB.getOnlineSessions();
+        const badge = document.getElementById('online-count');
+
+        if (online.length === 0) {
+            container.innerHTML = '<div style="color:var(--text3);font-size:0.85rem;padding:8px 0;">Tidak ada user online saat ini</div>';
+            if (badge) badge.textContent = '0';
+            return;
+        }
+        if (badge) badge.textContent = String(online.length);
+
+        container.innerHTML = online.map(s => {
+            const ago = Math.round((Date.now() - s.lastSeen) / 1000);
+            const agoText = ago < 5 ? 'aktif sekarang' : `${ago}d lalu`;
+            const dot = ago < 8 ? '#10b981' : '#f59e0b';
+            return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border1);">
+                <span style="width:8px;height:8px;border-radius:50%;background:${dot};display:inline-block;flex-shrink:0;"></span>
+                <span style="font-weight:600;flex:1;">${Security.sanitize(s.username)}</span>
+                <span style="font-size:0.72rem;color:var(--text3);">${s.role}</span>
+                <span style="font-size:0.72rem;color:var(--text3);">${agoText}</span>
+            </div>`;
+        }).join('');
+    },
+
+    renderPurchaseLog() {
         const tbody = document.getElementById('purchase-log-body');
         if (!tbody) return;
         const purchases = PurchaseLog.getRecent(50);
-
-        if (purchases.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);">📭 Belum ada pembelian</td></tr>';
-            return;
-        }
-
+        if (purchases.length === 0) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);">📭 Belum ada pembelian</td></tr>'; return; }
         tbody.innerHTML = purchases.map(p => {
-            const statusClass = p.autoExecuted ? 'status-executed' : 'status-pending';
-            const statusText = p.autoExecuted ? '✅ Auto-sent' : '⏳ Manual Queue';
+            const sc = p.autoExecuted ? 'status-executed' : 'status-pending';
+            const st = p.autoExecuted ? '✅ Auto-sent' : '⏳ Manual Queue';
             const cmdsHtml = p.commands.map(c => `<code style="display:block;font-size:0.72rem;background:var(--bg2);padding:2px 6px;border-radius:3px;margin:2px 0;color:var(--primary3);">${Security.sanitize(c)}</code>`).join('');
-            return `
-                <tr>
-                    <td style="font-size:0.78rem;color:var(--text3);">${new Date(p.timestamp).toLocaleString('id-ID')}</td>
-                    <td style="font-weight:600;">${Security.sanitize(p.username)}</td>
-                    <td>${Security.sanitize(p.itemName)}<div style="margin-top:4px;">${cmdsHtml}</div></td>
-                    <td style="color:var(--gold);font-weight:700;">${(p.price || 0).toLocaleString()}</td>
-                    <td><span class="command-status ${statusClass}">${statusText}</span></td>
-                </tr>`;
+            return `<tr>
+                <td style="font-size:0.78rem;color:var(--text3);">${new Date(p.timestamp).toLocaleString('id-ID')}</td>
+                <td style="font-weight:600;">${Security.sanitize(p.username)}</td>
+                <td>${Security.sanitize(p.itemName)}<div style="margin-top:4px;">${cmdsHtml}</div></td>
+                <td style="color:var(--gold);font-weight:700;">${(p.price || 0).toLocaleString()}</td>
+                <td><span class="command-status ${sc}">${st}</span></td>
+            </tr>`;
         }).join('');
     },
 
-    renderCommandTable: () => {
+    renderCommandTable() {
         const tbody = document.getElementById('command-table-body');
         if (!tbody) return;
         const commands = CommandQueue.getAll();
-        if (commands.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text3);">📭 Tidak ada command</td></tr>';
-            return;
-        }
+        if (commands.length === 0) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text3);">📭 Tidak ada command</td></tr>'; return; }
         tbody.innerHTML = commands.map(cmd => {
             const sc = cmd.status === 'pending' ? 'status-pending' : cmd.status === 'failed' ? 'status-failed' : 'status-executed';
             const st = cmd.status === 'pending' ? '⏳ Pending' : cmd.status === 'failed' ? '❌ Failed' : (cmd.autoSent ? '✅ Auto-sent' : '✅ Executed');
             const safeCmd = Security.sanitize(cmd.command).replace(/"/g, '&quot;');
             const actions = cmd.status === 'pending'
-                ? `<button class="btn-execute" onclick="app.copyAndExecute(${cmd.id}, this.getAttribute('data-cmd'))" data-cmd="${safeCmd}">📋 Copy & Execute</button>
-                   <button class="btn-copy" onclick="app.copyCommandOnly(this.getAttribute('data-cmd'))" data-cmd="${safeCmd}">📄 Copy</button>`
+                ? `<button class="btn-execute" onclick="app.copyAndExecute(${cmd.id}, this.getAttribute('data-cmd'))" data-cmd="${safeCmd}">📋 Copy & Execute</button><button class="btn-copy" onclick="app.copyCommandOnly(this.getAttribute('data-cmd'))" data-cmd="${safeCmd}">📄 Copy</button>`
                 : `<button class="btn-copy" onclick="app.deleteCommand(${cmd.id})">🗑️ Hapus</button>`;
-            return `
-                <tr>
-                    <td style="font-size:0.78rem;">${new Date(cmd.timestamp).toLocaleString('id-ID')}</td>
-                    <td><div class="command-text"><code>${Security.sanitize(cmd.command)}</code></div><small style="color:var(--text3);">👤 ${Security.sanitize(cmd.username)} — ${Security.sanitize(cmd.itemName)}</small></td>
-                    <td><span class="command-status ${sc}">${st}</span></td>
-                    <td>${actions}</td>
-                </tr>`;
+            return `<tr>
+                <td style="font-size:0.78rem;">${new Date(cmd.timestamp).toLocaleString('id-ID')}</td>
+                <td><div class="command-text"><code>${Security.sanitize(cmd.command)}</code></div><small style="color:var(--text3);">👤 ${Security.sanitize(cmd.username)} — ${Security.sanitize(cmd.itemName)}</small></td>
+                <td><span class="command-status ${sc}">${st}</span></td>
+                <td>${actions}</td>
+            </tr>`;
         }).join('');
     },
 
-    updateStats: () => {
-        const users = DB.getUsers();
-        const totalCoins = users.reduce((sum, u) => sum + (u.coin || 0), 0);
-        const purchases = PurchaseLog.getAll();
-        const pending = CommandQueue.getPending();
-        const onlineUsers = JSON.parse(localStorage.getItem('duskveil_online_users') || '[]');
-        const now = Date.now();
-        const activeCount = onlineUsers.filter(u => (now - u.lastSeen) < 30000).length;
-
-        const statUsers = document.getElementById('stat-total-users');
-        const statCoins = document.getElementById('stat-total-coins');
-        const statPurchases = document.getElementById('stat-total-purchases');
-        const statPending = document.getElementById('stat-pending-commands');
-        const statOnline = document.getElementById('stat-online-users');
-
-        if (statUsers) statUsers.textContent = users.length.toLocaleString();
-        if (statCoins) statCoins.textContent = totalCoins.toLocaleString();
-        if (statPurchases) statPurchases.textContent = purchases.length.toLocaleString();
-        if (statPending) statPending.textContent = pending.length.toLocaleString();
-        if (statOnline) statOnline.textContent = activeCount.toLocaleString();
+    updateStats() {
+        const users    = DB.getUsers();
+        const total    = users.reduce((s, u) => s + (u.coin || 0), 0);
+        const buys     = PurchaseLog.getAll();
+        const pending  = CommandQueue.getPending();
+        const online   = SharedDB.getOnlineSessions();
+        const el = (id) => document.getElementById(id);
+        if (el('stat-total-users'))    el('stat-total-users').textContent    = users.length.toLocaleString();
+        if (el('stat-total-coins'))    el('stat-total-coins').textContent    = total.toLocaleString();
+        if (el('stat-total-purchases'))el('stat-total-purchases').textContent= buys.length.toLocaleString();
+        if (el('stat-pending-commands'))el('stat-pending-commands').textContent = pending.length.toLocaleString();
+        // Update player count di server monitor
+        const playerMetric = document.querySelector('.metric-value:not(.good):not(.warning)');
+        if (playerMetric && playerMetric.closest('.metric')?.querySelector('.metric-label')?.textContent === 'Player') {
+            playerMetric.textContent = `${online.length} / 100`;
+        }
     },
 
-    updateAdminBadge: () => {
+    updateAdminBadge() {
         const badge = document.getElementById('pending-badge');
         if (!badge) return;
         const n = CommandQueue.getPending().length;
@@ -856,94 +600,67 @@ const ui = {
         badge.style.display = n > 0 ? 'inline-flex' : 'none';
     },
 
-    showCommandPanel: () => {
-        document.getElementById('store-section').classList.add('hidden');
-        document.getElementById('admin-dashboard').classList.add('hidden');
-        document.getElementById('purchase-panel').classList.add('hidden');
-        document.getElementById('command-panel').classList.remove('hidden');
-        ui.renderCommandTable();
+    showCommandPanel() {
+        ['store-section','admin-dashboard','purchase-panel'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
+        document.getElementById('command-panel')?.classList.remove('hidden');
+        this.renderCommandTable();
+    },
+    showPurchasePanel() {
+        ['store-section','admin-dashboard','command-panel'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
+        document.getElementById('purchase-panel')?.classList.remove('hidden');
+        this.renderPurchaseLog();
+    },
+    showAdminPanel() {
+        ['store-section','command-panel','purchase-panel'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
+        document.getElementById('admin-dashboard')?.classList.remove('hidden');
+        this.renderAdminTable();
+        this.updateStats();
+        this.renderOnlinePlayers();
+    },
+    showStorePanel() {
+        document.getElementById('store-section')?.classList.remove('hidden');
+        ['admin-dashboard','command-panel','purchase-panel'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
     },
 
-    showPurchasePanel: () => {
-        document.getElementById('store-section').classList.add('hidden');
-        document.getElementById('admin-dashboard').classList.add('hidden');
-        document.getElementById('command-panel').classList.add('hidden');
-        document.getElementById('purchase-panel').classList.remove('hidden');
-        ui.renderPurchaseLog();
-    },
-
-    showAdminPanel: () => {
-        document.getElementById('store-section').classList.add('hidden');
-        document.getElementById('command-panel').classList.add('hidden');
-        document.getElementById('purchase-panel').classList.add('hidden');
-        document.getElementById('admin-dashboard').classList.remove('hidden');
-        ui.renderAdminTable();
-        ui.renderOnlineUsers();
-        ui.updateStats();
-    },
-
-    showStorePanel: () => {
-        document.getElementById('store-section').classList.remove('hidden');
-        document.getElementById('admin-dashboard').classList.add('hidden');
-        document.getElementById('command-panel').classList.add('hidden');
-        document.getElementById('purchase-panel').classList.add('hidden');
-    },
-
-    updateHeader: () => {
+    updateHeader() {
         const session = sessionStorage.getItem('duskveil_session');
         if (!session) return;
         const user = JSON.parse(session);
-        const navUser = document.getElementById('nav-username');
-        const navCoin = document.getElementById('nav-coin');
-        const navAvatar = document.getElementById('nav-avatar');
-        if (navUser) navUser.innerText = Security.sanitize(user.username);
-        if (navCoin) navCoin.innerText = (user.coin || 0).toLocaleString();
-        if (navAvatar) navAvatar.innerText = user.username.charAt(0).toUpperCase();
-        ui.updateAdminBadge();
+        const el = (id) => document.getElementById(id);
+        if (el('nav-username')) el('nav-username').innerText = Security.sanitize(user.username);
+        if (el('nav-coin'))     el('nav-coin').innerText     = (user.coin || 0).toLocaleString();
+        if (el('nav-avatar'))   el('nav-avatar').innerText   = user.username.charAt(0).toUpperCase();
+        this.updateAdminBadge();
     },
 
-    showPage: (page) => {
+    showPage(page) {
         const auth = document.getElementById('auth-section');
         const store = document.getElementById('store-section');
-        const nav = document.getElementById('navbar');
-        const adminDash = document.getElementById('admin-dashboard');
-        
+        const nav   = document.getElementById('navbar');
         if (page === 'auth') {
-            auth.classList.remove('hidden');
-            store.classList.add('hidden');
-            nav.classList.add('hidden');
-            if (adminDash) adminDash.classList.add('hidden');
-            document.getElementById('command-panel')?.classList.add('hidden');
-            document.getElementById('purchase-panel')?.classList.add('hidden');
-            // Init Turnstile setelah DOM siap
-            setTimeout(() => {
-                TurnstileManager.init();
-            }, 300);
+            auth?.classList.remove('hidden');
+            store?.classList.add('hidden');
+            nav?.classList.add('hidden');
+            ['admin-dashboard','command-panel','purchase-panel'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
+            setTimeout(() => TurnstileManager.render('login'), 100);
         } else {
-            auth.classList.add('hidden');
-            nav.classList.remove('hidden');
-            
+            auth?.classList.add('hidden');
+            nav?.classList.remove('hidden');
             const session = sessionStorage.getItem('duskveil_session');
             if (session) {
                 const user = JSON.parse(session);
                 const isAdmin = user.role === 'admin';
-                
                 document.getElementById('admin-notice')?.classList.toggle('hidden', !isAdmin);
                 document.getElementById('nav-commands-btn')?.classList.toggle('hidden', !isAdmin);
                 document.getElementById('nav-purchases-btn')?.classList.toggle('hidden', !isAdmin);
                 document.getElementById('nav-admin-btn')?.classList.toggle('hidden', !isAdmin);
-                
-                if (isAdmin) {
-                    ui.showAdminPanel();
-                } else {
-                    ui.showStorePanel();
-                }
+                isAdmin ? this.showAdminPanel() : this.showStorePanel();
             }
-            ui.updateAdminBadge();
+            this.updateAdminBadge();
         }
     },
 
-    showSkillModal: (price, cb) => {
+    showSkillModal(price, cb) {
         const modal = document.getElementById('skill-modal');
         const container = document.getElementById('skill-list-container');
         if (!container) return;
@@ -952,16 +669,13 @@ const ui = {
             const div = document.createElement('div');
             div.className = 'skill-option';
             div.innerHTML = `<span class="skill-name">⚔️ ${Security.sanitize(skill.name)}</span><span class="skill-price">${price.toLocaleString()} 🪙</span>`;
-            div.onclick = () => { ui.closeSkillModal(); cb(skill.name, price); };
+            div.onclick = () => { this.closeSkillModal(); cb(skill.name, price); };
             container.appendChild(div);
         });
-        modal.classList.remove('hidden');
+        modal?.classList.remove('hidden');
     },
 
-    closeSkillModal: () => {
-        const modal = document.getElementById('skill-modal');
-        if (modal) modal.classList.add('hidden');
-    }
+    closeSkillModal() { document.getElementById('skill-modal')?.classList.add('hidden'); }
 };
 
 // ============================================
@@ -970,39 +684,34 @@ const ui = {
 const app = {
     turnstileToken: null,
 
-    init: () => {
-        console.log('🚀 App.init() starting...');
+    init() {
         SyncEngine.init();
         DB.init();
         ui.renderStore();
-        
+
         const session = sessionStorage.getItem('duskveil_session');
         if (session) {
             try {
                 const user = JSON.parse(session);
                 const dbUser = DB.getUser(user.username);
                 if (dbUser) {
-                    const freshSession = { ...dbUser, token: user.token, loginAt: user.loginAt };
-                    sessionStorage.setItem('duskveil_session', JSON.stringify(freshSession));
+                    const fresh = { ...dbUser, token: user.token, loginAt: user.loginAt };
+                    sessionStorage.setItem('duskveil_session', JSON.stringify(fresh));
+                    SharedDB.registerSession(user.username, dbUser.role); // re-register saat reload
                     ui.updateHeader();
                     ui.showPage('store');
                 } else {
                     sessionStorage.removeItem('duskveil_session');
                     ui.showPage('auth');
                 }
-            } catch {
-                sessionStorage.removeItem('duskveil_session');
-                ui.showPage('auth');
-            }
+            } catch { sessionStorage.removeItem('duskveil_session'); ui.showPage('auth'); }
         } else {
             ui.showPage('auth');
         }
-
-        app.initParticles();
-        console.log('✅ App.init() complete');
+        this.initParticles();
     },
 
-    initParticles: () => {
+    initParticles() {
         const container = document.getElementById('particles');
         if (!container) return;
         container.innerHTML = '';
@@ -1010,37 +719,20 @@ const app = {
             const p = document.createElement('div');
             p.className = 'particle';
             p.style.left = Math.random() * 100 + '%';
-            p.style.top = Math.random() * 100 + '%';
-            p.style.setProperty('--dur', (4 + Math.random() * 6) + 's');
+            p.style.top  = Math.random() * 100 + '%';
+            p.style.setProperty('--dur',   (4 + Math.random() * 6) + 's');
             p.style.setProperty('--delay', (Math.random() * 5) + 's');
             container.appendChild(p);
         }
     },
 
-    handleLogin: async (e) => {
+    async handleLogin(e) {
         e.preventDefault();
-        console.log('🔑 Login attempt...');
-        
-        if (!Security.checkRateLimit('login', 5, 60000)) {
-            ui.toast('⛔ Terlalu banyak percobaan login. Coba lagi dalam 1 menit.', 'error');
-            return;
-        }
-
-        if (!app.turnstileToken) {
-            console.log('⚠️ No turnstile token');
-            ui.toast('⚠️ Harap selesaikan verifikasi keamanan terlebih dahulu!', 'error');
-            TurnstileManager.render('login');
-            return;
-        }
-
+        if (!Security.checkRateLimit('login', 5, 60000)) { ui.toast('⛔ Terlalu banyak percobaan. Coba lagi 1 menit lagi.', 'error'); return; }
+        if (!app.turnstileToken) { ui.toast('⚠️ Harap selesaikan verifikasi keamanan!', 'error'); return; }
         const u = document.getElementById('login-user').value.trim();
         const p = document.getElementById('login-pass').value;
-        
-        if (!u || !p) {
-            ui.toast('Harap isi username dan password!', 'error');
-            return;
-        }
-        
+        if (!u || !p) { ui.toast('Harap isi username dan password!', 'error'); return; }
         const res = DB.login(u, p);
         if (res.success) {
             sessionStorage.setItem('duskveil_session', JSON.stringify(res.user));
@@ -1056,42 +748,21 @@ const app = {
         }
     },
 
-    handleRegister: async (e) => {
+    async handleRegister(e) {
         e.preventDefault();
-        
-        if (!Security.checkRateLimit('register', 3, 60000)) {
-            ui.toast('⛔ Terlalu banyak percobaan registrasi. Coba lagi dalam 1 menit.', 'error');
-            return;
-        }
-
-        if (!app.turnstileToken) {
-            ui.toast('⚠️ Harap selesaikan verifikasi keamanan terlebih dahulu!', 'error');
-            TurnstileManager.render('register');
-            return;
-        }
-
-        const u = document.getElementById('reg-user').value.trim();
-        const p = document.getElementById('reg-pass').value;
+        if (!Security.checkRateLimit('register', 3, 60000)) { ui.toast('⛔ Terlalu banyak percobaan.', 'error'); return; }
+        if (!app.turnstileToken) { ui.toast('⚠️ Harap selesaikan verifikasi keamanan!', 'error'); return; }
+        const u  = document.getElementById('reg-user').value.trim();
+        const p  = document.getElementById('reg-pass').value;
         const pc = document.getElementById('reg-pass-confirm').value;
-        
-        if (!u || !p || !pc) {
-            ui.toast('Harap isi semua field!', 'error');
-            return;
-        }
-        
-        if (p !== pc) {
-            ui.toast('Password dan konfirmasi password tidak cocok!', 'error');
-            return;
-        }
-        
+        if (!u || !p || !pc) { ui.toast('Harap isi semua field!', 'error'); return; }
+        if (p !== pc) { ui.toast('Password tidak cocok!', 'error'); return; }
         const res = DB.register(u, p);
         if (res.success) {
             ui.toast('Registrasi berhasil! Silakan login.');
             ui.switchTab('login');
             document.getElementById('login-user').value = u;
-            document.getElementById('reg-user').value = '';
-            document.getElementById('reg-pass').value = '';
-            document.getElementById('reg-pass-confirm').value = '';
+            ['reg-user','reg-pass','reg-pass-confirm'].forEach(id => { document.getElementById(id).value = ''; });
             app.turnstileToken = null;
         } else {
             ui.toast(res.message, 'error');
@@ -1099,16 +770,14 @@ const app = {
         }
     },
 
-    logout: () => {
-        const user = app._getUser();
+    logout() {
+        const user = this._getUser();
+        if (user) SharedDB.removeSession(user.username);
         sessionStorage.removeItem('duskveil_session');
+        SyncEngine.broadcast('user_logout', { username: user?.username, ts: Date.now() });
         ui.showPage('auth');
         ui.toast('Anda telah keluar.');
         app.turnstileToken = null;
-        
-        if (user) {
-            SyncEngine.broadcast('user_logout', { username: user.username, timestamp: Date.now() });
-        }
     },
 
     _deductCoin(user, price) {
@@ -1125,24 +794,21 @@ const app = {
         return s ? JSON.parse(s) : null;
     },
 
-    buyBook: async (itemName, price, smallTextName) => {
-        const user = app._getUser();
-        if (!user) { ui.toast('Silakan login terlebih dahulu!', 'error'); return; }
-        if ((user.coin || 0) < price) { ui.toast(`Koin tidak cukup! Butuh ${price.toLocaleString()} koin`, 'error'); return; }
+    async buyBook(itemName, price, smallTextName) {
+        const user = this._getUser();
+        if (!user) { ui.toast('Silakan login!', 'error'); return; }
+        if ((user.coin || 0) < price) { ui.toast(`Koin tidak cukup! Butuh ${price.toLocaleString()}`, 'error'); return; }
         if (!confirm(`Beli ${itemName} seharga ${price.toLocaleString()} koin?`)) return;
-
-        app._deductCoin(user, price);
-        const command = `ksl give ${user.username} ${smallTextName}`;
-        await processCommands(command, user.username, itemName, price);
+        this._deductCoin(user, price);
+        await processCommands(`ksl give ${user.username} ${smallTextName}`, user.username, itemName, price);
     },
 
-    buyRank: async (rankName, price, rankId) => {
-        const user = app._getUser();
-        if (!user) { ui.toast('Silakan login terlebih dahulu!', 'error'); return; }
-        if ((user.coin || 0) < price) { ui.toast(`Koin tidak cukup! Butuh ${price.toLocaleString()} koin`, 'error'); return; }
+    async buyRank(rankName, price, rankId) {
+        const user = this._getUser();
+        if (!user) { ui.toast('Silakan login!', 'error'); return; }
+        if ((user.coin || 0) < price) { ui.toast(`Koin tidak cukup! Butuh ${price.toLocaleString()}`, 'error'); return; }
         if (!confirm(`Beli rank ${rankName} seharga ${price.toLocaleString()} koin?`)) return;
-
-        app._deductCoin(user, price);
+        this._deductCoin(user, price);
         const commands = [
             `lp user ${user.username} parent set ${rankId.toLowerCase()}`,
             `pex user ${user.username} group set ${rankId.toLowerCase()}`,
@@ -1152,177 +818,128 @@ const app = {
         await processCommands(commands, user.username, `Rank: ${rankName}`, price);
     },
 
-    showSkillSelection: (price) => {
-        const user = app._getUser();
-        if (!user) { ui.toast('Silakan login terlebih dahulu!', 'error'); return; }
-        if ((user.coin || 0) < price) { ui.toast(`Koin tidak cukup! Butuh ${price.toLocaleString()} koin`, 'error'); return; }
-        ui.showSkillModal(price, (skillName, actualPrice) => app.upgradeSkill(skillName, actualPrice));
+    showSkillSelection(price) {
+        const user = this._getUser();
+        if (!user) { ui.toast('Silakan login!', 'error'); return; }
+        if ((user.coin || 0) < price) { ui.toast('Koin tidak cukup!', 'error'); return; }
+        ui.showSkillModal(price, (skillName, actualPrice) => this.upgradeSkill(skillName, actualPrice));
     },
 
-    upgradeSkill: async (skillName, price) => {
-        const user = app._getUser();
+    async upgradeSkill(skillName, price) {
+        const user = this._getUser();
         if (!user) return;
-        const level = prompt(`Masukkan level untuk skill ${skillName} (1-1000):`, "100");
-        if (!level || isNaN(level) || level < 1 || level > 1000) {
-            ui.toast('Level tidak valid! (1-1000)', 'error');
-            return;
-        }
+        const level = prompt(`Level untuk skill ${skillName} (1-1000):`, "100");
+        if (!level || isNaN(level) || level < 1 || level > 1000) { ui.toast('Level tidak valid!', 'error'); return; }
         if (!confirm(`Upgrade ${skillName} ke level ${level} seharga ${price.toLocaleString()} koin?`)) return;
-
-        app._deductCoin(user, price);
+        this._deductCoin(user, price);
         const skillId = SKILLS_LIST.find(s => s.name === skillName)?.id || skillName.toLowerCase();
-        const command = `skill setlevel ${user.username} ${skillId} ${level}`;
-        await processCommands(command, user.username, `Skill: ${skillName} → Lv.${level}`, price);
+        await processCommands(`skill setlevel ${user.username} ${skillId} ${level}`, user.username, `Skill: ${skillName} → Lv.${level}`, price);
     },
 
-    buyAllSkills: async (price) => {
-        const user = app._getUser();
-        if (!user) { ui.toast('Silakan login terlebih dahulu!', 'error'); return; }
-        if ((user.coin || 0) < price) { ui.toast(`Koin tidak cukup! Butuh ${price.toLocaleString()} koin`, 'error'); return; }
+    async buyAllSkills(price) {
+        const user = this._getUser();
+        if (!user) { ui.toast('Silakan login!', 'error'); return; }
+        if ((user.coin || 0) < price) { ui.toast('Koin tidak cukup!', 'error'); return; }
         const maxLevel = prompt("Set semua skill ke level berapa? (1-1000):", "1000");
         if (!maxLevel || isNaN(maxLevel) || maxLevel < 1 || maxLevel > 1000) { ui.toast('Level tidak valid!', 'error'); return; }
         if (!confirm(`Set ALL SKILLS ke level ${maxLevel} seharga ${price.toLocaleString()} koin?`)) return;
-
-        app._deductCoin(user, price);
-        const command = `skill setall ${user.username} ${maxLevel}`;
-        await processCommands(command, user.username, `All Skills → Lv.${maxLevel}`, price);
+        this._deductCoin(user, price);
+        await processCommands(`skill setall ${user.username} ${maxLevel}`, user.username, `All Skills → Lv.${maxLevel}`, price);
     },
 
-    copyAndExecute: async (id, command) => {
+    async copyAndExecute(id, command) {
         await navigator.clipboard.writeText(command);
-        ui.toast('✅ Command di-copy ke clipboard!');
-        if (confirm('Apakah command sudah dijalankan di server?\n\nOK = sudah, Cancel = belum')) {
+        ui.toast('✅ Command di-copy!');
+        if (confirm('Apakah command sudah dijalankan?\nOK = sudah')) {
             CommandQueue.markExecuted(id);
             ui.renderCommandTable();
             ui.updateAdminBadge();
-            ui.toast('✅ Command ditandai executed!');
+            ui.toast('✅ Ditandai executed!');
         }
     },
 
-    copyCommandOnly: async (command) => {
-        await navigator.clipboard.writeText(command);
-        ui.toast('✅ Command di-copy! Paste di console server Minecraft.');
-    },
+    async copyCommandOnly(command) { await navigator.clipboard.writeText(command); ui.toast('✅ Command di-copy!'); },
 
-    deleteCommand: (id) => {
+    deleteCommand(id) {
         if (!confirm('Hapus command ini?')) return;
-        CommandQueue.delete(id);
-        ui.renderCommandTable();
-        ui.updateAdminBadge();
-        ui.toast('🗑️ Command dihapus!');
+        CommandQueue.delete(id); ui.renderCommandTable(); ui.updateAdminBadge(); ui.toast('🗑️ Dihapus!');
     },
 
-    executeAllCommands: async () => {
+    async executeAllCommands() {
         const pending = CommandQueue.getPending();
         if (pending.length === 0) { ui.toast('📭 Tidak ada command pending!', 'error'); return; }
-
-        if (confirm(`Kirim ${pending.length} command sekaligus ke server secara otomatis?`)) {
-            ui.toast(`⏳ Mengirim ${pending.length} command ke server...`);
-            const results = await PterodactylAPI.sendCommands(pending.map(c => c.command));
-            const allOk = results.every(r => r.success);
-            if (allOk) {
-                pending.forEach(c => CommandQueue.markExecuted(c.id));
-                ui.toast(`✅ Semua ${pending.length} command berhasil dikirim ke server!`);
-            } else {
-                const failedIdx = results.findIndex(r => !r.success);
-                pending.forEach((c, idx) => {
-                    if (idx <= failedIdx) {
-                        if (results[idx]?.success) {
-                            CommandQueue.markExecuted(c.id);
-                        } else {
-                            CommandQueue.markFailed(c.id);
-                        }
-                    }
-                });
-                const allCmds = pending.map(c => c.command).join('\\n');
-                navigator.clipboard.writeText(allCmds);
-                ui.toast(`⚠️ Sebagian command gagal. Semua command di-copy ke clipboard!`, 'error');
-            }
-            ui.renderCommandTable();
-            ui.updateAdminBadge();
-            ui.updateStats();
+        if (!confirm(`Kirim ${pending.length} command ke server?`)) return;
+        ui.toast(`⏳ Mengirim ${pending.length} command...`);
+        const results = await PterodactylAPI.sendCommands(pending.map(c => c.command));
+        const allOk = results.every(r => r.success);
+        if (allOk) {
+            pending.forEach(c => CommandQueue.markExecuted(c.id));
+            ui.toast(`✅ Semua ${pending.length} command berhasil!`);
+        } else {
+            pending.forEach((c, i) => { if (results[i]?.success) CommandQueue.markExecuted(c.id); else CommandQueue.markFailed(c.id); });
+            navigator.clipboard.writeText(pending.map(c => c.command).join('\n'));
+            ui.toast('⚠️ Sebagian gagal. Command di-copy — paste manual!', 'error');
         }
+        ui.renderCommandTable(); ui.updateAdminBadge(); ui.updateStats();
     },
 
-    copyAllCommands: async () => {
+    async copyAllCommands() {
         const pending = CommandQueue.getPending();
-        if (pending.length === 0) { ui.toast('📭 Tidak ada command pending!', 'error'); return; }
-        const allCmds = pending.map(c => c.command).join('\\n');
-        await navigator.clipboard.writeText(allCmds);
-        ui.toast(`✅ ${pending.length} command di-copy ke clipboard!`);
+        if (pending.length === 0) { ui.toast('📭 Tidak ada command!', 'error'); return; }
+        await navigator.clipboard.writeText(pending.map(c => c.command).join('\n'));
+        ui.toast(`✅ ${pending.length} command di-copy!`);
     },
 
-    clearAllCommands: () => {
+    clearAllCommands() {
         if (CommandQueue.getPending().length === 0) { ui.toast('📭 Tidak ada command!', 'error'); return; }
-        if (!confirm('Hapus SEMUA command? Tidak bisa dibatalkan!')) return;
-        CommandQueue.clearAll();
-        ui.renderCommandTable();
-        ui.updateAdminBadge();
-        ui.updateStats();
-        ui.toast('🗑️ Semua command dihapus!');
+        if (!confirm('Hapus SEMUA command?')) return;
+        CommandQueue.clearAll(); ui.renderCommandTable(); ui.updateAdminBadge(); ui.updateStats(); ui.toast('🗑️ Semua command dihapus!');
     },
 
-    exportCommands: () => {
+    exportCommands() {
         const commands = CommandQueue.getAll();
         if (commands.length === 0) { ui.toast('📭 Tidak ada command!', 'error'); return; }
         const uri = 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(commands, null, 2));
-        const a = document.createElement('a');
-        a.href = uri;
-        a.download = `duskveil_commands_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.json`;
-        a.click();
+        const a = document.createElement('a'); a.href = uri; a.download = `duskveil_commands_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.json`; a.click();
         ui.toast(`💾 Exported ${commands.length} command!`);
     },
 
-    exportAllData: () => {
-        const data = {
-            users: DB.getUsers(),
-            purchases: PurchaseLog.getAll(),
-            commands: CommandQueue.getAll(),
-            exportedAt: new Date().toISOString()
-        };
+    exportAllData() {
+        const data = { users: DB.getUsers(), purchases: PurchaseLog.getAll(), commands: CommandQueue.getAll(), exportedAt: new Date().toISOString() };
         const uri = 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(data, null, 2));
-        const a = document.createElement('a');
-        a.href = uri;
-        a.download = `duskveil_backup_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.json`;
-        a.click();
-        ui.toast(`💾 Database exported!`);
+        const a = document.createElement('a'); a.href = uri; a.download = `duskveil_backup_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.json`; a.click();
+        ui.toast('💾 Database exported!');
     },
 
-    clearAllData: () => {
-        if (!confirm('⚠️ PERINGATAN: Ini akan menghapus SEMUA data!\n\nYakin ingin melanjutkan?')) return;
-        if (!confirm('Konfirmasi terakhir: Semua data akan HILANG PERMANEN. Lanjutkan?')) return;
-        localStorage.removeItem('duskveil_db');
-        localStorage.removeItem('duskveil_commands');
-        localStorage.removeItem('duskveil_purchases');
-        localStorage.removeItem('duskveil_online_users');
-        DB.init();
-        ui.renderAdminTable();
-        ui.updateStats();
-        ui.toast('🗑️ Semua data telah direset!');
+    clearAllData() {
+        if (!confirm('⚠️ Hapus SEMUA data? Tidak bisa dibatalkan!')) return;
+        if (!confirm('Konfirmasi terakhir: yakin?')) return;
+        [SharedDB.USERS_KEY, SharedDB.SESSIONS_KEY, SharedDB.COMMANDS_KEY, SharedDB.PURCHASES_KEY].forEach(k => localStorage.removeItem(k));
+        DB.init(); ui.renderAdminTable(); ui.updateStats(); ui.toast('🗑️ Data direset!');
     },
 
-    fillAdmin: (u, c) => {
-        const searchInput = document.getElementById('admin-search');
-        const coinInput = document.getElementById('admin-coin');
-        if (searchInput) searchInput.value = u;
-        if (coinInput) coinInput.value = c;
+    fillAdmin(u, c) {
+        const si = document.getElementById('admin-search'); if (si) si.value = u;
+        const ci = document.getElementById('admin-coin');   if (ci) ci.value = c;
     },
 
-    adminSetCoin: () => {
-        const username = document.getElementById('admin-search').value.trim();
+    adminSetCoin() {
+        const username   = document.getElementById('admin-search').value.trim();
         const coinAmount = document.getElementById('admin-coin').value;
         if (!username) { ui.toast('Masukkan username!', 'error'); return; }
         if (!coinAmount || isNaN(coinAmount) || parseInt(coinAmount) < 0) { ui.toast('Jumlah koin tidak valid!', 'error'); return; }
         if (DB.updateUserCoin(username, parseInt(coinAmount))) {
             ui.toast(`✅ Koin ${Security.sanitize(username)} → ${parseInt(coinAmount).toLocaleString()}`);
-            ui.renderAdminTable();
-            ui.updateHeader();
-            ui.updateStats();
+            ui.renderAdminTable(); ui.updateHeader(); ui.updateStats();
             document.getElementById('admin-coin').value = '';
-        } else {
-            ui.toast('User tidak ditemukan!', 'error');
-        }
+        } else { ui.toast('User tidak ditemukan!', 'error'); }
     }
 };
 
 window.addEventListener('DOMContentLoaded', () => app.init());
+
+// Hapus session saat browser/tab ditutup
+window.addEventListener('beforeunload', () => {
+    const user = app._getUser();
+    if (user) SharedDB.removeSession(user.username);
+});
