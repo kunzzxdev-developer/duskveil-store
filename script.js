@@ -22,16 +22,6 @@ const SKILLS_LIST = [
 // ============================================
 // SHARED STORAGE ENGINE
 // ============================================
-// PENTING: localStorage hanya tersedia per-device/browser.
-// Untuk deteksi cross-device (HP ke PC), kita gunakan
-// pendekatan "session registry" — setiap user yang login
-// menulis data dirinya ke localStorage dengan timestamp
-// heartbeat. Admin polling setiap 2 detik membaca data ini.
-//
-// Karena semua user mengakses domain yang sama, localStorage
-// mereka berbagi key yang sama → admin di PC bisa baca
-// session yang ditulis user dari HP selama same origin.
-// ============================================
 const SharedDB = {
     USERS_KEY:     'dv_users',
     SESSIONS_KEY:  'dv_sessions',
@@ -53,19 +43,15 @@ const SharedDB = {
     },
     _write(key, data) {
         localStorage.setItem(key, this._enc(data));
-        // Bump global version counter — ini yang polling admin deteksi
         const v = (parseInt(localStorage.getItem(this.VERSION_KEY) || '0') + 1);
         localStorage.setItem(this.VERSION_KEY, String(v));
     },
 
     getVersion()  { return parseInt(localStorage.getItem(this.VERSION_KEY) || '0'); },
 
-    // USERS
     getUsers()    { return this._read(this.USERS_KEY, { users: [] }).users || []; },
     saveUsers(u)  { this._write(this.USERS_KEY, { users: u }); },
 
-    // ONLINE SESSIONS — key = username, value = { username, role, loginAt, lastSeen }
-    // Setiap browser/device yang login menulis ke sini. Admin baca semua entries.
     getSessions() { return this._read(this.SESSIONS_KEY, {}) || {}; },
     saveSessions(s) { this._write(this.SESSIONS_KEY, s); },
 
@@ -78,8 +64,6 @@ const SharedDB = {
         const sessions = this.getSessions();
         if (sessions[username]) {
             sessions[username].lastSeen = Date.now();
-            // Tulis langsung ke localStorage tanpa bump version besar
-            // agar tidak trigger false-positive di admin
             localStorage.setItem(this.SESSIONS_KEY, this._enc(sessions));
         }
     },
@@ -90,11 +74,10 @@ const SharedDB = {
     },
     getOnlineSessions() {
         const sessions = this.getSessions();
-        const cutoff = Date.now() - 20000; // 20 detik timeout
+        const cutoff = Date.now() - 20000;
         return Object.values(sessions).filter(s => s.lastSeen > cutoff);
     },
 
-    // PURCHASES & COMMANDS
     getPurchases()    { return this._read(this.PURCHASES_KEY, []) || []; },
     savePurchases(d)  { this._write(this.PURCHASES_KEY, d); },
     getCommands()     { return this._read(this.COMMANDS_KEY, []) || []; },
@@ -111,27 +94,23 @@ const SyncEngine = {
     knownOnline: new Set(),
 
     init() {
-        // BroadcastChannel: instant sync antar tab di browser/device yang sama
         if (typeof BroadcastChannel !== 'undefined') {
             this.channel = new BroadcastChannel('duskveil_sync');
             this.channel.onmessage = (e) => this._onMessage(e.data);
         }
 
-        // StorageEvent: cross-tab same-device (Firefox, Chrome multi-tab)
         window.addEventListener('storage', (e) => {
             if ([SharedDB.VERSION_KEY, SharedDB.SESSIONS_KEY, SharedDB.USERS_KEY].includes(e.key)) {
                 this._refresh();
             }
         });
 
-        // Polling 2 detik — backbone utama untuk cross-device detection
         this.lastVersion = SharedDB.getVersion();
         this.knownUsers = new Set(SharedDB.getUsers().map(u => u.username));
         this.knownOnline = new Set(SharedDB.getOnlineSessions().map(s => s.username));
 
         setInterval(() => this._poll(), 2000);
 
-        // Heartbeat 5 detik agar user tidak dianggap offline
         setInterval(() => {
             const user = app._getUser();
             if (user) SharedDB.heartbeat(user.username);
@@ -141,7 +120,6 @@ const SyncEngine = {
     _poll() {
         const currentVer = SharedDB.getVersion();
         if (currentVer === this.lastVersion) {
-            // Version sama tapi cek online sessions tetap (heartbeat tidak bump version besar)
             this._checkOnlineChanges();
             return;
         }
@@ -150,7 +128,6 @@ const SyncEngine = {
     },
 
     _checkOnlineChanges() {
-        // Cek perubahan online tanpa full refresh — efisien
         const session = sessionStorage.getItem('duskveil_session');
         if (!session) return;
         const user = JSON.parse(session);
@@ -178,23 +155,19 @@ const SyncEngine = {
         const user = JSON.parse(session);
 
         if (user.role === 'admin') {
-            // Cek user baru terdaftar
             const currentUsers = new Set(SharedDB.getUsers().map(u => u.username));
             const newUsers = [...currentUsers].filter(u => !this.knownUsers.has(u));
             newUsers.forEach(u => ui.toast(`🎉 Member baru "${u}" berhasil daftar!`, 'success'));
             this.knownUsers = currentUsers;
 
-            // Refresh semua panel
             ui.renderAdminTable();
             ui.renderOnlinePlayers();
             ui.updateStats();
             ui.updateAdminBadge();
 
-            // Update panel yang sedang aktif
             if (!document.getElementById('purchase-panel')?.classList.contains('hidden')) ui.renderPurchaseLog();
             if (!document.getElementById('command-panel')?.classList.contains('hidden')) ui.renderCommandTable();
         } else {
-            // Update koin user jika diubah admin
             const freshUser = SharedDB.getUsers().find(u => u.username === user.username);
             if (freshUser && freshUser.coin !== user.coin) {
                 const updated = { ...user, coin: freshUser.coin };
@@ -381,7 +354,6 @@ const DB = {
         const user = SharedDB.getUsers().find(x => x.username === u && x.password === p);
         if (user) {
             const token = Security.generateToken();
-            // Tulis session ke SharedDB — ini yang admin baca lintas device
             SharedDB.registerSession(u, user.role);
             SyncEngine.broadcast('user_login', { username: u, role: user.role, ts: Date.now() });
             return { success: true, user: { ...user, token, loginAt: new Date().toISOString() } };
@@ -507,7 +479,6 @@ const ui = {
             </tr>`).join('');
     },
 
-    // Render daftar user online real-time di panel admin
     renderOnlinePlayers() {
         const container = document.getElementById('online-players-list');
         if (!container) return;
@@ -525,7 +496,7 @@ const ui = {
             const ago = Math.round((Date.now() - s.lastSeen) / 1000);
             const agoText = ago < 5 ? 'aktif sekarang' : `${ago}d lalu`;
             const dot = ago < 8 ? '#10b981' : '#f59e0b';
-            return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border1);">
+            return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border);">
                 <span style="width:8px;height:8px;border-radius:50%;background:${dot};display:inline-block;flex-shrink:0;"></span>
                 <span style="font-weight:600;flex:1;">${Security.sanitize(s.username)}</span>
                 <span style="font-size:0.72rem;color:var(--text3);">${s.role}</span>
@@ -585,11 +556,8 @@ const ui = {
         if (el('stat-total-coins'))    el('stat-total-coins').textContent    = total.toLocaleString();
         if (el('stat-total-purchases'))el('stat-total-purchases').textContent= buys.length.toLocaleString();
         if (el('stat-pending-commands'))el('stat-pending-commands').textContent = pending.length.toLocaleString();
-        // Update player count di server monitor
-        const playerMetric = document.querySelector('.metric-value:not(.good):not(.warning)');
-        if (playerMetric && playerMetric.closest('.metric')?.querySelector('.metric-label')?.textContent === 'Player') {
-            playerMetric.textContent = `${online.length} / 100`;
-        }
+        const playerCountEl = document.getElementById('server-player-count');
+        if (playerCountEl) playerCountEl.textContent = `${online.length} / 100`;
     },
 
     updateAdminBadge() {
@@ -697,7 +665,7 @@ const app = {
                 if (dbUser) {
                     const fresh = { ...dbUser, token: user.token, loginAt: user.loginAt };
                     sessionStorage.setItem('duskveil_session', JSON.stringify(fresh));
-                    SharedDB.registerSession(user.username, dbUser.role); // re-register saat reload
+                    SharedDB.registerSession(user.username, dbUser.role);
                     ui.updateHeader();
                     ui.showPage('store');
                 } else {
@@ -877,7 +845,7 @@ const app = {
             ui.toast(`✅ Semua ${pending.length} command berhasil!`);
         } else {
             pending.forEach((c, i) => { if (results[i]?.success) CommandQueue.markExecuted(c.id); else CommandQueue.markFailed(c.id); });
-            navigator.clipboard.writeText(pending.map(c => c.command).join('\n'));
+            navigator.clipboard.writeText(pending.map(c => c.command).join('\\n'));
             ui.toast('⚠️ Sebagian gagal. Command di-copy — paste manual!', 'error');
         }
         ui.renderCommandTable(); ui.updateAdminBadge(); ui.updateStats();
@@ -886,7 +854,7 @@ const app = {
     async copyAllCommands() {
         const pending = CommandQueue.getPending();
         if (pending.length === 0) { ui.toast('📭 Tidak ada command!', 'error'); return; }
-        await navigator.clipboard.writeText(pending.map(c => c.command).join('\n'));
+        await navigator.clipboard.writeText(pending.map(c => c.command).join('\\n'));
         ui.toast(`✅ ${pending.length} command di-copy!`);
     },
 
@@ -938,8 +906,7 @@ const app = {
 
 window.addEventListener('DOMContentLoaded', () => app.init());
 
-// Hapus session saat browser/tab ditutup
 window.addEventListener('beforeunload', () => {
     const user = app._getUser();
     if (user) SharedDB.removeSession(user.username);
-});
+})
