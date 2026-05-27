@@ -6,25 +6,18 @@
     --surface2:  #1c1c27;
     --border:    #2a2a3a;
     --border2:   #3a3a50;
-
     --primary:   #8b5cf6;
     --primary2:  #6d28d9;
     --primary3:  #a78bfa;
     --glow:      rgba(139, 92, 246, 0.35);
-
     --gold:      #f0b429;
     --gold2:     #fcd34d;
-    --gold-glow: rgba(240, 180, 41, 0.25);
-
     --danger:    #ef4444;
     --success:   #10b981;
     --warning:   #f59e0b;
-    --info:      #3b82f6;
-
     --text:      #e8e8f0;
     --text2:     #9090a8;
     --text3:     #5a5a72;
-
     --radius:    14px;
     --radius-sm: 8px;
 }
@@ -41,15 +34,13 @@ body {
     overflow-x: hidden;
 }
 
-/* ===================== BACKGROUND - FIXED pointer-events ===================== */
-
+/* ===================== BACKGROUND ===================== */
 .bg-gradient-mesh {
     position: fixed;
     inset: 0;
     background:
         radial-gradient(ellipse 80% 60% at 20% 10%, rgba(109, 40, 217, 0.12) 0%, transparent 60%),
-        radial-gradient(ellipse 60% 80% at 80% 90%, rgba(139, 92, 246, 0.08) 0%, transparent 60%),
-        radial-gradient(ellipse 40% 40% at 50% 50%, rgba(6, 6, 8, 0.5) 0%, transparent 100%);
+        radial-gradient(ellipse 60% 80% at 80% 90%, rgba(139, 92, 246, 0.08) 0%, transparent 60%);
     pointer-events: none;
     z-index: 0;
 }
@@ -58,7 +49,7 @@ body {
     position: fixed;
     inset: 0;
     pointer-events: none;
-    z-index: 0;
+    z-index: 1;
     overflow: hidden;
 }
 
@@ -80,7 +71,6 @@ body {
 }
 
 /* ===================== UTILS ===================== */
-
 .hidden { display: none !important; }
 .fade-in { animation: fadeIn 0.5s ease-out both; }
 
@@ -90,7 +80,6 @@ body {
 }
 
 /* ===================== NAVBAR ===================== */
-
 nav {
     position: sticky;
     top: 0;
@@ -117,7 +106,6 @@ nav {
 .logo-smp  { color: var(--text3); font-size: 0.75rem; margin-left: 4px; vertical-align: middle; letter-spacing: 3px; }
 
 .nav-items { display: flex; align-items: center; gap: 16px; }
-
 .user-info { display: flex; align-items: center; gap: 12px; }
 
 .user-avatar {
@@ -156,7 +144,6 @@ nav {
     position: relative;
     border: none;
     outline: none;
-    pointer-events: auto;
 }
 
 .btn-nav-cmd {
@@ -193,14 +180,13 @@ nav {
 .btn-logout:hover { border-color: var(--danger); color: var(--danger); }
 
 /* ===================== AUTH SECTION ===================== */
-
 #auth-section {
     min-height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
     position: relative;
-    z-index: 1;
+    z-index: 10;
     padding: 2rem;
 }
 
@@ -208,7 +194,7 @@ nav {
     position: relative;
     width: 100%;
     max-width: 440px;
-    z-index: 10;
+    z-index: 20;
 }
 
 .auth-deco-left, .auth-deco-right {
@@ -241,8 +227,7 @@ nav {
         0 32px 64px rgba(0, 0, 0, 0.6),
         inset 0 1px 0 rgba(255, 255, 255, 0.05);
     backdrop-filter: blur(10px);
-    z-index: 20;
-    pointer-events: auto;
+    z-index: 50;
 }
 
 .auth-logo-area {
@@ -307,7 +292,6 @@ nav {
     transition: all 0.25s;
     z-index: 1;
     position: relative;
-    pointer-events: auto;
 }
 
 .tab-btn.active { color: var(--text); background: var(--surface2); box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
@@ -336,7 +320,7 @@ nav {
     color: var(--text3);
     font-size: 0.8rem;
     pointer-events: none;
-    z-index: 1;
+    z-index: 2;
     transition: color 0.2s;
 }
 
@@ -351,7 +335,8 @@ input {
     font-family: 'Inter', sans-serif;
     transition: all 0.2s;
     outline: none;
-    pointer-events: auto;
+    position: relative;
+    z-index: 1;
 }
 
 input:focus {
@@ -362,40 +347,57 @@ input:focus {
 
 input:focus + .input-icon, .input-wrap:focus-within .input-icon { color: var(--primary3); }
 
-/* Turnstile Wrapper - FIXED */
+/* ============================================
+   TURNSTILE - CRITICAL FIX
+   ============================================ */
 .cf-turnstile-wrapper {
     margin-bottom: 1.25rem;
     display: flex;
     justify-content: center;
     align-items: center;
-    min-height: 65px;
+    min-height: 70px;
     background: var(--bg2);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    padding: 8px;
-    transition: border-color 0.2s;
+    padding: 10px;
     position: relative;
-    z-index: 30;
-    pointer-events: auto;
+    z-index: 100;
+    overflow: visible;
 }
 
 .cf-turnstile-wrapper:hover {
     border-color: var(--primary);
 }
 
-.cf-turnstile-wrapper > div {
+/* The actual Turnstile container */
+.cf-turnstile {
     width: 100%;
     display: flex;
     justify-content: center;
     align-items: center;
+    min-height: 65px;
 }
 
-/* Turnstile iframe styling */
-.cf-turnstile-wrapper iframe {
+/* Turnstile iframe - ensure it's clickable */
+.cf-turnstile iframe {
     border-radius: 6px !important;
+    max-width: 100% !important;
 }
 
-/* Primary Button - FIXED pointer-events */
+/* Override any potential blocking */
+.cf-turnstile-wrapper * {
+    pointer-events: auto !important;
+}
+
+/* Loading state */
+.cf-turnstile-loading {
+    color: var(--text3);
+    font-size: 0.85rem;
+    text-align: center;
+    padding: 20px;
+}
+
+/* ===================== BUTTONS ===================== */
 .btn-primary {
     width: 100%;
     padding: 13px;
@@ -416,8 +418,7 @@ input:focus + .input-icon, .input-wrap:focus-within .input-icon { color: var(--p
     box-shadow: 0 4px 20px rgba(109, 40, 217, 0.4);
     position: relative;
     overflow: hidden;
-    pointer-events: auto;
-    z-index: 30;
+    z-index: 60;
 }
 
 .btn-primary::after {
@@ -442,9 +443,8 @@ input:focus + .input-icon, .input-wrap:focus-within .input-icon { color: var(--p
 .btn-arrow { transition: transform 0.2s; }
 .btn-primary:hover .btn-arrow { transform: translateX(4px); }
 
-/* ===================== STORE SECTION ===================== */
-
-#store-section { position: relative; z-index: 1; }
+/* ===================== STORE ===================== */
+#store-section { position: relative; z-index: 10; }
 
 .store-inner {
     max-width: 1280px;
@@ -452,7 +452,6 @@ input:focus + .input-icon, .input-wrap:focus-within .input-icon { color: var(--p
     padding: 2.5rem 2rem;
 }
 
-/* Admin Notice */
 .admin-notice-bar {
     display: flex;
     align-items: center;
@@ -469,7 +468,6 @@ input:focus + .input-icon, .input-wrap:focus-within .input-icon { color: var(--p
 
 .notice-icon { font-size: 1.1rem; }
 
-/* Hero Banner */
 .store-hero {
     display: flex;
     align-items: center;
@@ -515,7 +513,6 @@ input:focus + .input-icon, .input-wrap:focus-within .input-icon { color: var(--p
     line-height: 1;
 }
 
-/* Category */
 .category-section { margin-bottom: 3rem; }
 
 .category-header {
@@ -542,14 +539,12 @@ input:focus + .input-icon, .input-wrap:focus-within .input-icon { color: var(--p
     margin-left: 8px;
 }
 
-/* Grid */
 .grid-container {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: 18px;
 }
 
-/* Cards */
 .card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -560,7 +555,6 @@ input:focus + .input-icon, .input-wrap:focus-within .input-icon { color: var(--p
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     cursor: pointer;
-    pointer-events: auto;
 }
 
 .card::before {
@@ -664,7 +658,6 @@ input:focus + .input-icon, .input-wrap:focus-within .input-icon { color: var(--p
     font-size: 0.78rem;
     letter-spacing: 1px;
     text-transform: uppercase;
-    pointer-events: auto;
 }
 
 .btn-buy:hover {
@@ -674,18 +667,10 @@ input:focus + .input-icon, .input-wrap:focus-within .input-icon { color: var(--p
     box-shadow: 0 4px 16px var(--glow);
 }
 
-.btn-buy:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
+/* ===================== ADMIN ===================== */
+#admin-dashboard { position: relative; z-index: 10; }
 
-/* ===================== ADMIN DASHBOARD ===================== */
-
-#admin-dashboard { position: relative; z-index: 1; }
-
-.admin-dashboard-header {
-    margin-bottom: 2.5rem;
-}
+.admin-dashboard-header { margin-bottom: 2.5rem; }
 
 .admin-dashboard-title {
     display: flex;
@@ -707,10 +692,7 @@ input:focus + .input-icon, .input-wrap:focus-within .input-icon { color: var(--p
     background: linear-gradient(90deg, transparent, var(--danger), transparent);
 }
 
-.admin-dashboard-title span {
-    font-size: 2.5rem;
-    opacity: 0.9;
-}
+.admin-dashboard-title span { font-size: 2.5rem; opacity: 0.9; }
 
 .admin-dashboard-title h2 {
     font-family: 'Cinzel', serif;
@@ -723,13 +705,8 @@ input:focus + .input-icon, .input-wrap:focus-within .input-icon { color: var(--p
     background-clip: text;
 }
 
-.admin-dashboard-title p {
-    color: var(--text2);
-    font-size: 0.9rem;
-    margin-top: 0.25rem;
-}
+.admin-dashboard-title p { color: var(--text2); font-size: 0.9rem; margin-top: 0.25rem; }
 
-/* Stats Grid */
 .stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -784,7 +761,6 @@ input:focus + .input-icon, .input-wrap:focus-within .input-icon { color: var(--p
     letter-spacing: 1px;
 }
 
-/* Quick Actions */
 .quick-actions {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -804,7 +780,6 @@ input:focus + .input-icon, .input-wrap:focus-within .input-icon { color: var(--p
     transition: all 0.25s;
     color: var(--text);
     text-align: left;
-    pointer-events: auto;
 }
 
 .quick-action-btn:hover {
@@ -835,19 +810,9 @@ input:focus + .input-icon, .input-wrap:focus-within .input-icon { color: var(--p
     background: linear-gradient(135deg, #dc2626, var(--danger));
 }
 
-.quick-action-btn strong {
-    display: block;
-    font-size: 0.9rem;
-    font-weight: 600;
-    margin-bottom: 2px;
-}
+.quick-action-btn strong { display: block; font-size: 0.9rem; font-weight: 600; margin-bottom: 2px; }
+.quick-action-btn small { font-size: 0.75rem; color: var(--text3); }
 
-.quick-action-btn small {
-    font-size: 0.75rem;
-    color: var(--text3);
-}
-
-/* Server Status */
 .server-status {
     padding: 1.5rem 2rem;
     display: flex;
@@ -911,7 +876,6 @@ input:focus + .input-icon, .input-wrap:focus-within .input-icon { color: var(--p
 .metric-value.danger { color: var(--danger); }
 
 /* ===================== PANELS ===================== */
-
 .panel-container {
     margin-top: 2rem;
     background: var(--surface);
@@ -949,7 +913,6 @@ input:focus + .input-icon, .input-wrap:focus-within .input-icon { color: var(--p
 
 .panel-sub { font-size: 0.8rem; color: var(--text3); margin-top: 2px; }
 
-/* Admin Controls */
 .admin-controls {
     display: flex;
     gap: 16px;
@@ -983,12 +946,10 @@ input:focus + .input-icon, .input-wrap:focus-within .input-icon { color: var(--p
     letter-spacing: 1px;
     cursor: pointer;
     transition: all 0.2s;
-    pointer-events: auto;
 }
 
 .btn-success:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(16, 185, 129, 0.35); }
 
-/* Table */
 .table-wrapper { overflow-x: auto; padding: 0 2rem 2rem; }
 
 table { width: 100%; border-collapse: collapse; min-width: 560px; }
@@ -1025,7 +986,6 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 .status-admin  { background: rgba(139,92,246,0.2); color: var(--primary3); }
 .status-member { background: rgba(255,255,255,0.07); color: var(--text3); }
 
-/* Edit btn in table */
 .btn-tbl-edit {
     padding: 5px 12px;
     font-size: 0.75rem;
@@ -1036,12 +996,10 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     border-radius: 5px;
     cursor: pointer;
     transition: all 0.2s;
-    pointer-events: auto;
 }
 
 .btn-tbl-edit:hover { border-color: var(--primary); color: var(--primary3); }
 
-/* Command panel specifics */
 .command-text {
     font-family: 'SF Mono', 'Fira Code', monospace;
     font-size: 0.78rem;
@@ -1081,7 +1039,6 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     font-weight: 600;
     margin-right: 6px;
     transition: all 0.2s;
-    pointer-events: auto;
 }
 
 .btn-execute:hover { box-shadow: 0 2px 10px var(--glow); }
@@ -1095,7 +1052,6 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     cursor: pointer;
     font-size: 0.72rem;
     transition: all 0.2s;
-    pointer-events: auto;
 }
 
 .btn-copy:hover { border-color: var(--primary); color: var(--primary3); }
@@ -1124,12 +1080,10 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     cursor: pointer;
     transition: all 0.2s;
     width: 100%;
-    pointer-events: auto;
 }
 
 .btn-secondary:hover { border-color: var(--primary); color: var(--primary3); }
 
-/* Info Box */
 .info-box {
     margin: 1.5rem 2rem 2rem;
     background: rgba(16, 185, 129, 0.06);
@@ -1142,7 +1096,6 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 .info-box strong { color: #6ee7b7; }
 
 /* ===================== MODAL ===================== */
-
 .modal {
     position: fixed;
     inset: 0;
@@ -1175,7 +1128,6 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     flex-direction: column;
     box-shadow: 0 32px 64px rgba(0,0,0,0.6), 0 0 0 1px rgba(139,92,246,0.1);
     animation: modalIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-    pointer-events: auto;
 }
 
 @keyframes modalIn {
@@ -1209,7 +1161,6 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     transition: all 0.2s;
     display: flex; align-items: center; justify-content: center;
     font-size: 0.85rem;
-    pointer-events: auto;
 }
 
 .modal-close:hover { background: var(--danger); border-color: var(--danger); color: white; }
@@ -1232,7 +1183,6 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     display: flex;
     justify-content: space-between;
     align-items: center;
-    pointer-events: auto;
 }
 
 .skill-option:hover {
@@ -1253,7 +1203,6 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 }
 
 /* ===================== TOAST ===================== */
-
 #toast-box {
     position: fixed;
     bottom: 24px;
@@ -1293,7 +1242,6 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 }
 
 /* ===================== RESPONSIVE ===================== */
-
 @media (max-width: 768px) {
     nav { padding: 0 1rem; }
     .nav-inner { height: auto; padding: 0.75rem 0; flex-wrap: wrap; gap: 10px; }
@@ -1311,6 +1259,7 @@ tr:hover td { background: rgba(255,255,255,0.015); }
     .info-box { margin: 1rem 1rem 1.5rem; }
     .auth-wrapper { max-width: 100%; }
     .auth-card { padding: 1.5rem; }
+    .cf-turnstile-wrapper { min-height: 60px; padding: 6px; }
 }
 
 @media (max-width: 480px) {
