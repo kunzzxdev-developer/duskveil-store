@@ -1,0 +1,19 @@
+# Buat file _config.yml untuk disable Jekyll processing
+cfg = '''# Disable Jekyll processing - this is a static site
+theme: null
+plugins: []
+'''
+
+with open('/mnt/agents/output/_config.yml', 'w', encoding='utf-8') as f:
+    f.write(cfg)
+
+print("_config.yml saved!")
+print(cfg)
+
+# Juga buat .nojekyll file (cara paling ampuh)
+njk = ''
+with open('/mnt/agents/output/.nojekyll', 'w', encoding='utf-8') as f:
+    f.write(njk)
+
+print("\n.nojekyll saved!")
+print("(File kosong untuk disable Jekyll sepenuhnya)")
