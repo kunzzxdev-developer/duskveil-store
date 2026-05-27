@@ -945,5 +945,3 @@ print(f"Parens: {open_parens} open, {close_parens} close")
 
 with open('/mnt/agents/output/script.js', 'w', encoding='utf-8') as f:
     f.write(js_fixed)
-
-print(f"\n✅ script.js saved! Size: {len(js_fixed)} chars")
