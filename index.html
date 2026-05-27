@@ -357,13 +357,21 @@
                             </div>
                             <div class="metric">
                                 <span class="metric-label">Player</span>
-                                <span class="metric-value">12 / 100</span>
+                                <span class="metric-value" id="server-player-count">0 / 100</span>
                             </div>
                             <div class="metric">
                                 <span class="metric-label">Uptime</span>
                                 <span class="metric-value">3d 12h 45m</span>
                             </div>
                         </div>
+                    </div>
+                    <!-- Online Players List -->
+                    <div style="padding: 0 2rem 1.5rem;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+                            <span style="font-size:0.85rem;color:var(--text2);font-weight:600;">🟢 User Online</span>
+                            <span id="online-count" style="background:var(--success);color:white;font-size:0.7rem;padding:2px 8px;border-radius:10px;font-weight:700;">0</span>
+                        </div>
+                        <div id="online-players-list" style="max-height:200px;overflow-y:auto;"></div>
                     </div>
                 </div>
             </div>
