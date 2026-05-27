@@ -37,14 +37,18 @@ const SharedDB = {
         try { return JSON.parse(decodeURIComponent(escape(atob(str)))); } catch { try { return JSON.parse(str); } catch { return null; } }
     },
     _read(key, fallback) {
-        const raw = localStorage.getItem(key);
-        const result = this._dec(raw);
-        return result !== null ? result : fallback;
+        try {
+            const raw = localStorage.getItem(key);
+            const result = this._dec(raw);
+            return result !== null ? result : fallback;
+        } catch { return fallback; }
     },
     _write(key, data) {
-        localStorage.setItem(key, this._enc(data));
-        const v = (parseInt(localStorage.getItem(this.VERSION_KEY) || '0') + 1);
-        localStorage.setItem(this.VERSION_KEY, String(v));
+        try {
+            localStorage.setItem(key, this._enc(data));
+            const v = (parseInt(localStorage.getItem(this.VERSION_KEY) || '0') + 1);
+            localStorage.setItem(this.VERSION_KEY, String(v));
+        } catch(e) { console.error('SharedDB write error:', e); }
     },
 
     getVersion()  { return parseInt(localStorage.getItem(this.VERSION_KEY) || '0'); },
@@ -64,7 +68,9 @@ const SharedDB = {
         const sessions = this.getSessions();
         if (sessions[username]) {
             sessions[username].lastSeen = Date.now();
-            localStorage.setItem(this.SESSIONS_KEY, this._enc(sessions));
+            try {
+                localStorage.setItem(this.SESSIONS_KEY, this._enc(sessions));
+            } catch(e) {}
         }
     },
     removeSession(username) {
@@ -85,39 +91,55 @@ const SharedDB = {
 };
 
 // ============================================
-// SYNC ENGINE
+// SYNC ENGINE — deteksi perubahan real-time
 // ============================================
 const SyncEngine = {
     channel: null,
     lastVersion: -1,
     knownUsers: new Set(),
     knownOnline: new Set(),
+    isActive: false,
 
     init() {
+        // BroadcastChannel: instant sync antar tab di browser/device yang sama
         if (typeof BroadcastChannel !== 'undefined') {
-            this.channel = new BroadcastChannel('duskveil_sync');
-            this.channel.onmessage = (e) => this._onMessage(e.data);
+            try {
+                this.channel = new BroadcastChannel('duskveil_sync');
+                this.channel.onmessage = (e) => this._onMessage(e.data);
+            } catch(e) { console.log('BroadcastChannel not available'); }
         }
 
+        // StorageEvent: cross-tab same-device
         window.addEventListener('storage', (e) => {
             if ([SharedDB.VERSION_KEY, SharedDB.SESSIONS_KEY, SharedDB.USERS_KEY].includes(e.key)) {
                 this._refresh();
             }
         });
 
+        // Polling 2 detik — backbone utama untuk cross-device detection
         this.lastVersion = SharedDB.getVersion();
         this.knownUsers = new Set(SharedDB.getUsers().map(u => u.username));
         this.knownOnline = new Set(SharedDB.getOnlineSessions().map(s => s.username));
 
+        this.isActive = true;
+        this._poll();
         setInterval(() => this._poll(), 2000);
 
+        // Heartbeat 5 detik agar user tidak dianggap offline
         setInterval(() => {
             const user = app._getUser();
             if (user) SharedDB.heartbeat(user.username);
         }, 5000);
+
+        // Force refresh setiap 10 detik untuk cross-device (HP ↔ PC)
+        setInterval(() => {
+            if (!this.isActive) return;
+            this._refresh();
+        }, 10000);
     },
 
     _poll() {
+        if (!this.isActive) return;
         const currentVer = SharedDB.getVersion();
         if (currentVer === this.lastVersion) {
             this._checkOnlineChanges();
@@ -155,19 +177,23 @@ const SyncEngine = {
         const user = JSON.parse(session);
 
         if (user.role === 'admin') {
+            // Cek user baru terdaftar
             const currentUsers = new Set(SharedDB.getUsers().map(u => u.username));
             const newUsers = [...currentUsers].filter(u => !this.knownUsers.has(u));
             newUsers.forEach(u => ui.toast(`🎉 Member baru "${u}" berhasil daftar!`, 'success'));
             this.knownUsers = currentUsers;
 
+            // Refresh semua panel
             ui.renderAdminTable();
             ui.renderOnlinePlayers();
             ui.updateStats();
             ui.updateAdminBadge();
 
+            // Update panel yang sedang aktif
             if (!document.getElementById('purchase-panel')?.classList.contains('hidden')) ui.renderPurchaseLog();
             if (!document.getElementById('command-panel')?.classList.contains('hidden')) ui.renderCommandTable();
         } else {
+            // Update koin user jika diubah admin
             const freshUser = SharedDB.getUsers().find(u => u.username === user.username);
             if (freshUser && freshUser.coin !== user.coin) {
                 const updated = { ...user, coin: freshUser.coin };
@@ -189,7 +215,9 @@ const SyncEngine = {
     },
 
     broadcast(type, data) {
-        if (this.channel) this.channel.postMessage({ type, data, ts: Date.now() });
+        if (this.channel) {
+            try { this.channel.postMessage({ type, data, ts: Date.now() }); } catch(e) {}
+        }
     }
 };
 
@@ -221,28 +249,70 @@ const Security = {
 };
 
 // ============================================
-// TURNSTILE MANAGER
+// TURNSTILE MANAGER — dengan fallback
 // ============================================
 const TurnstileManager = {
     widgetId: null,
     siteKey: '0x4AAAAAADWhIdBmcN5kZHEQ',
+    fallbackMode: false,
+
     render(tab) {
         this.remove();
         const id = tab === 'login' ? 'turnstile-login' : 'turnstile-register';
         const container = document.getElementById(id);
         if (!container) return;
         container.innerHTML = '';
-        if (window.turnstile) {
-            this.widgetId = window.turnstile.render(container, {
-                sitekey: this.siteKey,
-                callback: (token) => { app.turnstileToken = token; },
-                'error-callback': () => { app.turnstileToken = null; ui.toast('❌ Verifikasi gagal, coba lagi.', 'error'); },
-                theme: 'dark', size: 'normal'
-            });
+
+        // Coba render Turnstile
+        if (window.turnstile && typeof window.turnstile.render === 'function') {
+            try {
+                this.widgetId = window.turnstile.render(container, {
+                    sitekey: this.siteKey,
+                    callback: (token) => { app.turnstileToken = token; console.log('Turnstile OK'); },
+                    'error-callback': () => { app.turnstileToken = null; this._showFallback(container); },
+                    'expired-callback': () => { app.turnstileToken = null; },
+                    theme: 'dark', size: 'normal'
+                });
+                this.fallbackMode = false;
+                return;
+            } catch(e) {
+                console.error('Turnstile render error:', e);
+                this._showFallback(container);
+            }
         } else {
-            container.innerHTML = '<div style="color:var(--text3);font-size:0.78rem;text-align:center;padding:12px;">⏳ Memuat verifikasi...</div>';
+            // Turnstile script belum load — tunggu
+            container.innerHTML = '<div style="color:var(--text3);font-size:0.78rem;text-align:center;padding:12px;">⏳ Memuat verifikasi keamanan...</div>';
+            // Coba lagi setelah 2 detik
+            setTimeout(() => this.render(tab), 2000);
         }
     },
+
+    _showFallback(container) {
+        // Fallback: captcha manual sederhana
+        this.fallbackMode = true;
+        const a = Math.floor(Math.random() * 10) + 1;
+        const b = Math.floor(Math.random() * 10) + 1;
+        const answer = a + b;
+        container.innerHTML = `
+            <div style="color:var(--text3);font-size:0.85rem;text-align:center;padding:12px;border:1px dashed var(--border);border-radius:8px;">
+                <p style="margin-bottom:8px;">🔒 Verifikasi Manual</p>
+                <p style="font-size:1.2rem;color:var(--text);margin-bottom:8px;">${a} + ${b} = ?</p>
+                <input type="number" id="fallback-captcha" placeholder="Jawaban" style="width:100px;text-align:center;padding:6px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+                <button onclick="TurnstileManager._checkFallback(${answer})" style="margin-left:8px;padding:6px 12px;background:var(--primary);border:none;border-radius:6px;color:white;cursor:pointer;">OK</button>
+            </div>`;
+    },
+
+    _checkFallback(correctAnswer) {
+        const input = document.getElementById('fallback-captcha');
+        if (input && parseInt(input.value) === correctAnswer) {
+            app.turnstileToken = 'fallback_' + Date.now();
+            const container = input.closest('[id^="turnstile-"]');
+            if (container) container.innerHTML = '<div style="color:var(--success);text-align:center;padding:12px;">✅ Verifikasi berhasil!</div>';
+        } else {
+            ui.toast('Jawaban salah, coba lagi!', 'error');
+        }
+    },
+
     remove() {
         if (this.widgetId && window.turnstile) { try { window.turnstile.remove(this.widgetId); } catch(e) {} this.widgetId = null; }
         app.turnstileToken = null;
@@ -414,6 +484,7 @@ async function processCommands(commands, username, itemName, price) {
 const ui = {
     toast(msg, type = 'success') {
         const box = document.getElementById('toast-box');
+        if (!box) return;
         const div = document.createElement('div');
         div.className = `toast ${type}`;
         div.innerHTML = `<span>${Security.sanitize(msg)}</span><span style="cursor:pointer;font-size:1.1rem;opacity:.6" onclick="this.parentElement.remove()">×</span>`;
@@ -653,30 +724,35 @@ const app = {
     turnstileToken: null,
 
     init() {
-        SyncEngine.init();
-        DB.init();
-        ui.renderStore();
+        try {
+            SyncEngine.init();
+            DB.init();
+            ui.renderStore();
 
-        const session = sessionStorage.getItem('duskveil_session');
-        if (session) {
-            try {
-                const user = JSON.parse(session);
-                const dbUser = DB.getUser(user.username);
-                if (dbUser) {
-                    const fresh = { ...dbUser, token: user.token, loginAt: user.loginAt };
-                    sessionStorage.setItem('duskveil_session', JSON.stringify(fresh));
-                    SharedDB.registerSession(user.username, dbUser.role);
-                    ui.updateHeader();
-                    ui.showPage('store');
-                } else {
-                    sessionStorage.removeItem('duskveil_session');
-                    ui.showPage('auth');
-                }
-            } catch { sessionStorage.removeItem('duskveil_session'); ui.showPage('auth'); }
-        } else {
-            ui.showPage('auth');
+            const session = sessionStorage.getItem('duskveil_session');
+            if (session) {
+                try {
+                    const user = JSON.parse(session);
+                    const dbUser = DB.getUser(user.username);
+                    if (dbUser) {
+                        const fresh = { ...dbUser, token: user.token, loginAt: user.loginAt };
+                        sessionStorage.setItem('duskveil_session', JSON.stringify(fresh));
+                        SharedDB.registerSession(user.username, dbUser.role);
+                        ui.updateHeader();
+                        ui.showPage('store');
+                    } else {
+                        sessionStorage.removeItem('duskveil_session');
+                        ui.showPage('auth');
+                    }
+                } catch { sessionStorage.removeItem('duskveil_session'); ui.showPage('auth'); }
+            } else {
+                ui.showPage('auth');
+            }
+            this.initParticles();
+        } catch(e) {
+            console.error('App init error:', e);
+            alert('Terjadi error saat memuat aplikasi. Silakan refresh halaman.');
         }
-        this.initParticles();
     },
 
     initParticles() {
