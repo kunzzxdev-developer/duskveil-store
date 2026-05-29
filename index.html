@@ -6,6 +6,25 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
+    <meta http-equiv="Content-Security-Policy" content="
+        default-src 'self';
+        script-src 'self' 'unsafe-eval' 'unsafe-inline'
+            https://challenges.cloudflare.com
+            https://www.gstatic.com
+            https://static.cloudflareinsights.com;
+        frame-src https://challenges.cloudflare.com;
+        connect-src 'self'
+            https://*.firebaseio.com
+            https://*.googleapis.com
+            https://firestore.googleapis.com
+            https://identitytoolkit.googleapis.com
+            https://securetoken.googleapis.com
+            https://challenges.cloudflare.com;
+        style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+        font-src https://fonts.gstatic.com;
+        img-src 'self' data: https:;
+        worker-src blob:;
+    ">
     <title>DuskVeilSMP — Official Store</title>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
@@ -72,25 +91,22 @@
 
                     <form id="form-login" onsubmit="app.handleLogin(event)">
                         <div class="input-group">
-                            <label>Username Minecraft</label>
+                            <label for="login-user">Username Minecraft</label>
                             <div class="input-wrap">
                                 <span class="input-icon">◈</span>
                                 <input type="text" id="login-user" required placeholder="Username Minecraft anda" minlength="3" maxlength="16" pattern="[a-zA-Z0-9_]+">
                             </div>
                         </div>
                         <div class="input-group">
-                            <label>Password</label>
+                            <label for="login-pass">Password</label>
                             <div class="input-wrap">
                                 <span class="input-icon">◉</span>
                                 <input type="password" id="login-pass" required placeholder="Password anda" minlength="6">
                             </div>
                         </div>
-                        
-                        <!-- Turnstile Container (dinamis) -->
                         <div class="cf-turnstile-wrapper">
                             <div id="turnstile-login"></div>
                         </div>
-                        
                         <button type="submit" class="btn-primary" id="login-btn">
                             <span class="btn-text">MASUK SERVER</span>
                             <span class="btn-arrow">→</span>
@@ -99,32 +115,29 @@
 
                     <form id="form-register" class="hidden" onsubmit="app.handleRegister(event)">
                         <div class="input-group">
-                            <label>Username Minecraft Baru</label>
+                            <label for="reg-user">Username Minecraft Baru</label>
                             <div class="input-wrap">
                                 <span class="input-icon">◈</span>
                                 <input type="text" id="reg-user" required placeholder="Buat username anda" minlength="3" maxlength="16" pattern="[a-zA-Z0-9_]+">
                             </div>
                         </div>
                         <div class="input-group">
-                            <label>Password</label>
+                            <label for="reg-pass">Password</label>
                             <div class="input-wrap">
                                 <span class="input-icon">◉</span>
                                 <input type="password" id="reg-pass" required placeholder="Buat password anda" minlength="6">
                             </div>
                         </div>
                         <div class="input-group">
-                            <label>Konfirmasi Password</label>
+                            <label for="reg-pass-confirm">Konfirmasi Password</label>
                             <div class="input-wrap">
                                 <span class="input-icon">◉</span>
                                 <input type="password" id="reg-pass-confirm" required placeholder="Ulangi password">
                             </div>
                         </div>
-                        
-                        <!-- Turnstile Container (dinamis) -->
                         <div class="cf-turnstile-wrapper">
                             <div id="turnstile-register"></div>
                         </div>
-                        
                         <button type="submit" class="btn-primary" id="register-btn">
                             <span class="btn-text">DAFTAR SEKARANG</span>
                             <span class="btn-arrow">→</span>
@@ -137,14 +150,10 @@
         <!-- STORE SECTION -->
         <section id="store-section" class="hidden fade-in">
             <div class="store-inner">
-
-                <!-- Admin Notice -->
                 <div id="admin-notice" class="hidden admin-notice-bar">
                     <span class="notice-icon">⚠</span>
                     <span>MODE ADMIN — Anda memiliki akses penuh ke panel kontrol</span>
                 </div>
-
-                <!-- Hero Banner -->
                 <div class="store-hero">
                     <div class="store-hero-text">
                         <h2 class="store-hero-title">Official Store</h2>
@@ -152,8 +161,6 @@
                     </div>
                     <div class="store-hero-deco">⚔</div>
                 </div>
-
-                <!-- Categories -->
                 <div class="category-section">
                     <div class="category-header">
                         <span class="category-icon">📜</span>
@@ -162,7 +169,6 @@
                     </div>
                     <div class="grid-container" id="grid-kontrak"></div>
                 </div>
-
                 <div class="category-section">
                     <div class="category-header">
                         <span class="category-icon">👑</span>
@@ -171,7 +177,6 @@
                     </div>
                     <div class="grid-container" id="grid-rank"></div>
                 </div>
-
                 <div class="category-section">
                     <div class="category-header">
                         <span class="category-icon">⚔️</span>
@@ -180,7 +185,6 @@
                     </div>
                     <div class="grid-container" id="grid-skill"></div>
                 </div>
-
                 <div class="category-section">
                     <div class="category-header">
                         <span class="category-icon">🛡️</span>
@@ -212,8 +216,6 @@
                         </div>
                     </div>
                 </div>
-
-                <!-- Stats Cards -->
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-icon">👥</div>
@@ -244,8 +246,6 @@
                         </div>
                     </div>
                 </div>
-
-                <!-- Quick Actions -->
                 <div class="panel-container">
                     <div class="panel-header">
                         <div class="panel-header-left">
@@ -259,36 +259,22 @@
                     <div class="quick-actions">
                         <button class="quick-action-btn" onclick="ui.showCommandPanel()">
                             <span>⌨</span>
-                            <div>
-                                <strong>Command Queue</strong>
-                                <small>Kelola command pending</small>
-                            </div>
+                            <div><strong>Command Queue</strong><small>Kelola command pending</small></div>
                         </button>
                         <button class="quick-action-btn" onclick="ui.showPurchasePanel()">
                             <span>📋</span>
-                            <div>
-                                <strong>Riwayat Pembelian</strong>
-                                <small>Lihat semua transaksi</small>
-                            </div>
+                            <div><strong>Riwayat Pembelian</strong><small>Lihat semua transaksi</small></div>
                         </button>
                         <button class="quick-action-btn" onclick="app.exportAllData()">
                             <span>💾</span>
-                            <div>
-                                <strong>Export Data</strong>
-                                <small>Backup database & log</small>
-                            </div>
+                            <div><strong>Export Data</strong><small>Backup database & log</small></div>
                         </button>
                         <button class="quick-action-btn danger" onclick="app.clearAllData()">
                             <span>🗑</span>
-                            <div>
-                                <strong>Reset Data</strong>
-                                <small>Hapus semua data (Hati-hati!)</small>
-                            </div>
+                            <div><strong>Reset Data</strong><small>Hapus semua data (Hati-hati!)</small></div>
                         </button>
                     </div>
                 </div>
-
-                <!-- Member Management -->
                 <div class="panel-container">
                     <div class="panel-header">
                         <div class="panel-header-left">
@@ -299,38 +285,30 @@
                             </div>
                         </div>
                     </div>
-
                     <div class="admin-controls">
                         <div class="control-group">
-                            <label>Cari Member</label>
+                            <label for="admin-search">Cari Member</label>
                             <div class="input-wrap"><span class="input-icon">◈</span><input type="text" id="admin-search" placeholder="Username..."></div>
                         </div>
                         <div class="control-group">
-                            <label>Atur Saldo (Koin)</label>
+                            <label for="admin-coin">Atur Saldo (Koin)</label>
                             <div class="input-wrap"><span class="input-icon">✦</span><input type="number" id="admin-coin" placeholder="Jumlah Koin" min="0"></div>
                         </div>
                         <div class="control-group control-group--btn">
                             <button class="btn-success" onclick="app.adminSetCoin()">SET KOIN</button>
                         </div>
                     </div>
-
                     <div class="table-wrapper">
                         <table>
                             <thead>
                                 <tr>
-                                    <th>Username</th>
-                                    <th>Role</th>
-                                    <th>Saldo Koin</th>
-                                    <th>Terdaftar</th>
-                                    <th>Aksi</th>
+                                    <th>Username</th><th>Role</th><th>Saldo Koin</th><th>Terdaftar</th><th>Aksi</th>
                                 </tr>
                             </thead>
                             <tbody id="user-table-body"></tbody>
                         </table>
                     </div>
                 </div>
-
-                <!-- Online Players Monitor -->
                 <div class="panel-container">
                     <div class="panel-header">
                         <div class="panel-header-left">
@@ -347,25 +325,12 @@
                             <span>Server Online</span>
                         </div>
                         <div class="server-metrics">
-                            <div class="metric">
-                                <span class="metric-label">TPS</span>
-                                <span class="metric-value good">20.0</span>
-                            </div>
-                            <div class="metric">
-                                <span class="metric-label">RAM</span>
-                                <span class="metric-value warning">4.2GB / 8GB</span>
-                            </div>
-                            <div class="metric">
-                                <span class="metric-label">Player</span>
-                                <span class="metric-value" id="server-player-count">0 / 100</span>
-                            </div>
-                            <div class="metric">
-                                <span class="metric-label">Uptime</span>
-                                <span class="metric-value">3d 12h 45m</span>
-                            </div>
+                            <div class="metric"><span class="metric-label">TPS</span><span class="metric-value good">20.0</span></div>
+                            <div class="metric"><span class="metric-label">RAM</span><span class="metric-value warning">4.2GB / 8GB</span></div>
+                            <div class="metric"><span class="metric-label">Player</span><span class="metric-value" id="server-player-count">0 / 100</span></div>
+                            <div class="metric"><span class="metric-label">Uptime</span><span class="metric-value">3d 12h 45m</span></div>
                         </div>
                     </div>
-                    <!-- Online Players List -->
                     <div style="padding: 0 2rem 1.5rem;">
                         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
                             <span style="font-size:0.85rem;color:var(--text2);font-weight:600;">🟢 User Online</span>
@@ -391,17 +356,10 @@
                         </div>
                         <button class="btn-secondary btn-sm" onclick="ui.showAdminPanel()">← Kembali</button>
                     </div>
-
                     <div class="table-wrapper">
                         <table>
                             <thead>
-                                <tr>
-                                    <th>Waktu</th>
-                                    <th>Username</th>
-                                    <th>Item</th>
-                                    <th>Harga</th>
-                                    <th>Status</th>
-                                </tr>
+                                <tr><th>Waktu</th><th>Username</th><th>Item</th><th>Harga</th><th>Status</th></tr>
                             </thead>
                             <tbody id="purchase-log-body"></tbody>
                         </table>
@@ -424,34 +382,25 @@
                         </div>
                         <button class="btn-secondary btn-sm" onclick="ui.showAdminPanel()">← Kembali</button>
                     </div>
-
                     <div class="table-wrapper">
                         <table id="command-table">
                             <thead>
-                                <tr>
-                                    <th>Waktu</th>
-                                    <th>Command</th>
-                                    <th>Status</th>
-                                    <th>Aksi</th>
-                                </tr>
+                                <tr><th>Waktu</th><th>Command</th><th>Status</th><th>Aksi</th></tr>
                             </thead>
                             <tbody id="command-table-body"></tbody>
                         </table>
                     </div>
-
                     <div class="cmd-actions">
                         <button class="btn-primary btn-sm" onclick="app.executeAllCommands()">▶ Execute All Auto</button>
                         <button class="btn-secondary btn-sm" onclick="app.copyAllCommands()">📋 Copy All</button>
                         <button class="btn-secondary btn-sm" onclick="app.clearAllCommands()">🗑 Clear All</button>
                         <button class="btn-secondary btn-sm" onclick="app.exportCommands()">💾 Export JSON</button>
                     </div>
-
                     <div class="info-box">
                         <p>💡 <strong>Cara Execute Command:</strong></p>
                         <p>1️⃣ Klik <strong>"Execute All Auto"</strong> untuk mengirim otomatis ke server</p>
                         <p>2️⃣ Atau klik <strong>"Copy All"</strong> lalu paste di console server Minecraft</p>
                         <p>3️⃣ Klik "Mark Executed" setelah berhasil dijalankan</p>
-                        <p>🎯 <strong>Tips:</strong> Gunakan "Execute All Auto" untuk menjalankan semua sekaligus!</p>
                     </div>
                 </div>
             </div>
@@ -478,6 +427,7 @@
     <!-- Toast -->
     <div id="toast-box"></div>
 
-    <script src="script.js"></script>
+    <!-- PENTING: type="module" wajib ada untuk Firebase import -->
+    <script type="module" src="script.js"></script>
 </body>
 </html>
