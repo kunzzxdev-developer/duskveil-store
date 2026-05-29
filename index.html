@@ -6,7 +6,6 @@
     <title>DuskVeilSMP — Official Store</title>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
 <body>
     <div class="particles" id="particles"></div>
@@ -74,9 +73,7 @@
                                 <input type="password" id="login-pass" required placeholder="Password anda" minlength="6">
                             </div>
                         </div>
-                        <div class="cf-turnstile-wrapper">
-                            <div class="cf-turnstile" id="turnstile-login" data-sitekey="0x4AAAAAADWhIT5hFjEKoRvwiD6Re9f3S74" data-theme="dark" data-callback="onLoginVerified"></div>
-                        </div>
+
                         <button type="submit" class="btn-primary" id="login-btn">
                             <span class="btn-text">MASUK SERVER</span>
                             <span class="btn-arrow">→</span>
@@ -104,9 +101,7 @@
                                 <input type="password" id="reg-pass-confirm" required placeholder="Ulangi password">
                             </div>
                         </div>
-                        <div class="cf-turnstile-wrapper">
-                            <div class="cf-turnstile" id="turnstile-register" data-sitekey="0x4AAAAAADWhIT5hFjEKoRvwiD6Re9f3S74" data-theme="dark" data-callback="onRegisterVerified"></div>
-                        </div>
+
                         <button type="submit" class="btn-primary" id="register-btn">
                             <span class="btn-text">DAFTAR SEKARANG</span>
                             <span class="btn-arrow">→</span>
@@ -266,10 +261,6 @@
 
     <!-- Expose app & ui ke global scope untuk onclick di HTML -->
     <script type="module" src="script.js"></script>
-    <script>
-        // Callback Turnstile global
-        function onLoginVerified(token) { if(window.app) window.app.turnstileToken = token; }
-        function onRegisterVerified(token) { if(window.app) window.app.turnstileToken = token; }
-    </script>
+
 </body>
 </html>
