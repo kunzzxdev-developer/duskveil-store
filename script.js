@@ -21,38 +21,18 @@ const db = getFirestore(firebaseApp);
 // ANTI DEVTOOLS
 // ============================================
 (function() {
-    // Deteksi devtools terbuka
-    let devtoolsOpen = false;
-    const threshold = 160;
-    
-    setInterval(() => {
-        const widthDiff = window.outerWidth - window.innerWidth > threshold;
-        const heightDiff = window.outerHeight - window.innerHeight > threshold;
-        if (widthDiff || heightDiff) {
-            if (!devtoolsOpen) {
-                devtoolsOpen = true;
-                document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#060608;color:#ef4444;font-family:monospace;font-size:1.5rem;flex-direction:column;gap:16px;"><span>⛔</span><span>Akses Ditolak</span><span style="font-size:0.9rem;color:#666">Tutup DevTools untuk melanjutkan</span></div>';
-            }
-        } else {
-            if (devtoolsOpen) {
-                devtoolsOpen = false;
-                location.reload();
-            }
-        }
-    }, 500);
-
     // Disable klik kanan
     document.addEventListener('contextmenu', e => e.preventDefault());
     
-    // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U
+    // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U saja
     document.addEventListener('keydown', e => {
         if (
             e.key === 'F12' ||
-            (e.ctrlKey && e.shiftKey && ['I','J','C'].includes(e.key.toUpperCase())) ||
+            (e.ctrlKey && e.shiftKey && e.key.toUpperCase() === 'I') ||
+            (e.ctrlKey && e.shiftKey && e.key.toUpperCase() === 'J') ||
             (e.ctrlKey && e.key.toUpperCase() === 'U')
         ) {
             e.preventDefault();
-            return false;
         }
     });
 })();
@@ -682,6 +662,7 @@ const app = {
     async handleLogin(e) {
         e.preventDefault();
         if (!Security.checkRateLimit('login', 5, 60000)) { ui.toast('⛔ Terlalu banyak percobaan. Tunggu 1 menit.', 'error'); return; }
+        if (!app.turnstileToken) { ui.toast('⚠️ Selesaikan verifikasi keamanan!', 'error'); return; }
         const u = document.getElementById('login-user').value.trim();
         const p = document.getElementById('login-pass').value;
         if (!u || !p) { ui.toast('Isi username dan password!', 'error'); return; }
@@ -703,6 +684,7 @@ const app = {
     async handleRegister(e) {
         e.preventDefault();
         if (!Security.checkRateLimit('register', 3, 60000)) { ui.toast('⛔ Terlalu banyak percobaan.', 'error'); return; }
+        if (!app.turnstileToken) { ui.toast('⚠️ Selesaikan verifikasi keamanan!', 'error'); return; }
         const u  = document.getElementById('reg-user').value.trim();
         const p  = document.getElementById('reg-pass').value;
         const pc = document.getElementById('reg-pass-confirm').value;
