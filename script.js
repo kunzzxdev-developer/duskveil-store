@@ -208,7 +208,7 @@ const Security = {
 // ============================================
 const TurnstileManager = {
     widgetId: null,
-    siteKey: '0x4AAAAAADWhIdBmcN5kZHEQ',
+    siteKey: '0x4AAAAAADWhIT5hFjEKoRvwiD6Re9f3S74',
 
     render(tab) {
         this.remove();
