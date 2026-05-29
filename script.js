@@ -853,6 +853,11 @@ const app = {
     }
 };
 
+// Expose ke global scope SEBELUM init
+window.app = app;
+window.ui = ui;
+window.TurnstileManager = TurnstileManager;
+
 window.addEventListener('DOMContentLoaded', () => app.init());
 window.addEventListener('beforeunload', async () => {
     const session = sessionStorage.getItem('duskveil_session');
@@ -860,6 +865,3 @@ window.addEventListener('beforeunload', async () => {
 });
 
 // Expose ke global scope (wajib karena type="module")
-window.app = app;
-window.ui = ui;
-window.TurnstileManager = TurnstileManager;
