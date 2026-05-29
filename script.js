@@ -858,3 +858,8 @@ window.addEventListener('beforeunload', async () => {
     const session = sessionStorage.getItem('duskveil_session');
     if (session) { const user = JSON.parse(session); await FirebaseDB.removeSession(user.username); }
 });
+
+// Expose ke global scope (wajib karena type="module")
+window.app = app;
+window.ui = ui;
+window.TurnstileManager = TurnstileManager;
