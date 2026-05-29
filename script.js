@@ -21,7 +21,7 @@ const db = getFirestore(firebaseApp);
 // CONSTANTS
 // ============================================
 const API_CONFIG = {
-    apiKey: 'ptlc_fUVguzJJAugo1yh86scbFvQR5tELMlb7xv5n3XBCM2l',
+    apiKey: '0x4AAAAAADWhIdBmcN5kZHEQ',
     serverId: '0a090342-d608-4488-8810-11b484fb3317',
     panelUrl: 'https://panel.arqonara.com'
 };
