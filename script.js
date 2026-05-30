@@ -1,196 +1,71 @@
 // ============================================
-// DuskVeilSMP - SYNC VIA GOOGLE SHEETS
+// DuskVeilSMP - COMPLETE SYSTEM
 // ============================================
 
-// Google Sheets Web App URL (Anda perlu buat Google Apps Script)
-// Saya akan buatkan kode Google Apps Script terpisah
-const SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbxxxxx/exec';
+// Firebase Config (SUDAH SETTING)
+const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyCyEbIOIJ4DGEczi0yPWUSaA9BIM5TFgj0",
+    authDomain: "duskveilsmp.firebaseapp.com",
+    projectId: "duskveilsmp",
+    storageBucket: "duskveilsmp.firebasestorage.app",
+    messagingSenderId: "797107010544",
+    appId: "1:797107010544:web:6b5401cdb0cf045c0dbb35"
+};
 
-// Data lokal
-let users = {};
-let commands = [];
-let purchases = [];
+// Global variables
+let db = null;
+let usersCollection = null;
+let sessionsCollection = null;
+let commandsCollection = null;
+let purchasesCollection = null;
 let currentUser = null;
-let syncInterval = null;
+let unsubscribeListeners = [];
+let firebaseReady = false;
+let productsCache = null;
 
 // ============================================
-// LOAD DATA DARI LOCAL STORAGE
+// INIT FIREBASE V8
 // ============================================
-function loadLocalData() {
-    const savedUsers = localStorage.getItem('duskveil_users');
-    if (savedUsers) {
-        users = JSON.parse(savedUsers);
-    } else {
-        users = {
-            'admin': {
-                username: 'admin',
-                password: 'dusk@gnt3ng303#',
-                role: 'admin',
-                coin: 999999,
-                deviceId: Date.now().toString(),
-                lastSync: new Date().toISOString()
-            }
-        };
-        saveUsersToLocal();
-    }
-    
-    const savedCommands = localStorage.getItem('duskveil_commands');
-    if (savedCommands) {
-        commands = JSON.parse(savedCommands);
-    } else {
-        commands = [];
-        saveCommandsToLocal();
-    }
-    
-    const savedPurchases = localStorage.getItem('duskveil_purchases');
-    if (savedPurchases) {
-        purchases = JSON.parse(savedPurchases);
-    } else {
-        purchases = [];
-        savePurchasesToLocal();
-    }
-}
-
-function saveUsersToLocal() {
-    localStorage.setItem('duskveil_users', JSON.stringify(users));
-}
-
-function saveCommandsToLocal() {
-    localStorage.setItem('duskveil_commands', JSON.stringify(commands));
-}
-
-function savePurchasesToLocal() {
-    localStorage.setItem('duskveil_purchases', JSON.stringify(purchases));
-}
-
-// ============================================
-// SYNC KE SERVER (Google Sheets)
-// ============================================
-async function syncToServer() {
-    if (!currentUser || currentUser.role !== 'admin') return;
-    
-    try {
-        const syncData = {
-            action: 'sync',
-            deviceId: localStorage.getItem('deviceId') || generateDeviceId(),
-            users: users,
-            commands: commands,
-            purchases: purchases,
-            timestamp: new Date().toISOString()
-        };
-        
-        // Kirim ke Google Sheets
-        const response = await fetch(SHEETS_API_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(syncData)
-        });
-        
-        console.log('Sync sent to server');
-    } catch(e) {
-        console.error('Sync error:', e);
-    }
-}
-
-async function syncFromServer() {
-    if (!currentUser || currentUser.role !== 'admin') return;
-    
-    try {
-        const deviceId = localStorage.getItem('deviceId') || generateDeviceId();
-        const response = await fetch(SHEETS_API_URL + '?action=get&deviceId=' + deviceId);
-        const data = await response.json();
-        
-        if (data && data.users) {
-            // Update local data with server data
-            let changed = false;
-            
-            // Check users changes
-            for (let username in data.users) {
-                if (!users[username] || users[username].coin !== data.users[username].coin) {
-                    users[username] = data.users[username];
-                    changed = true;
-                }
-            }
-            
-            if (changed) {
-                saveUsersToLocal();
-                ui.renderAdminTable();
-                ui.updateStats();
-                
-                // Update current user if needed
-                if (currentUser && users[currentUser.username]) {
-                    currentUser.coin = users[currentUser.username].coin;
-                    sessionStorage.setItem('duskveil_session', JSON.stringify(currentUser));
-                    ui.updateHeader();
-                    showToast('💰 Data tersinkron dari device lain!', 'info');
-                }
-            }
-        }
-    } catch(e) {
-        console.error('Sync from server error:', e);
-    }
-}
-
-function generateDeviceId() {
-    const id = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
-    localStorage.setItem('deviceId', id);
-    return id;
-}
-
-// ============================================
-// KARENA GOOGLE SHEETS RIBET, PAKAI SIMPLE STORAGE DULU
-// TAPI SAYA BUATKAN VERSI YANG BISA MANUAL EXPORT/IMPORT
-// ============================================
-
-// Simple version: Export/Import data manually antar device
-function exportData() {
-    const data = {
-        users: users,
-        commands: commands,
-        purchases: purchases,
-        exportedAt: new Date().toISOString()
-    };
-    const jsonStr = JSON.stringify(data, null, 2);
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'duskveil_backup_' + new Date().toISOString().slice(0,19).replace(/:/g, '-') + '.json';
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('Data diexport! Transfer file ke device lain.', 'success');
-}
-
-function importData() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'application/json';
-    input.onchange = function(e) {
-        const file = e.target.files[0];
-        const reader = new FileReader();
-        reader.onload = function(evt) {
+function loadFirebase() {
+    return new Promise((resolve, reject) => {
+        if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0) {
             try {
-                const data = JSON.parse(evt.target.result);
-                if (data.users) users = data.users;
-                if (data.commands) commands = data.commands;
-                if (data.purchases) purchases = data.purchases;
-                saveUsersToLocal();
-                saveCommandsToLocal();
-                savePurchasesToLocal();
-                ui.renderAdminTable();
-                ui.updateStats();
-                ui.renderCommandTable();
-                ui.renderPurchaseLog();
-                showToast('Data berhasil diimport!', 'success');
-                location.reload();
-            } catch(err) {
-                showToast('File tidak valid!', 'error');
-            }
+                db = firebase.firestore();
+                usersCollection = db.collection('users');
+                sessionsCollection = db.collection('sessions');
+                commandsCollection = db.collection('commands');
+                purchasesCollection = db.collection('purchases');
+                firebaseReady = true;
+                resolve();
+                return;
+            } catch(e) { reject(e); }
+        }
+        
+        const script = document.createElement('script');
+        script.src = 'https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js';
+        script.onload = () => {
+            const firestoreScript = document.createElement('script');
+            firestoreScript.src = 'https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js';
+            firestoreScript.onload = () => {
+                try {
+                    if (!firebase.apps.length) {
+                        firebase.initializeApp(FIREBASE_CONFIG);
+                    }
+                    db = firebase.firestore();
+                    usersCollection = db.collection('users');
+                    sessionsCollection = db.collection('sessions');
+                    commandsCollection = db.collection('commands');
+                    purchasesCollection = db.collection('purchases');
+                    firebaseReady = true;
+                    resolve();
+                } catch(e) { reject(e); }
+            };
+            firestoreScript.onerror = reject;
+            document.head.appendChild(firestoreScript);
         };
-        reader.readAsText(file);
-    };
-    input.click();
+        script.onerror = reject;
+        document.head.appendChild(script);
+    });
 }
 
 // ============================================
@@ -203,23 +78,85 @@ function sanitize(str) {
 
 function showToast(msg, type) {
     if (!type) type = 'success';
-    var box = document.getElementById('toast-box');
+    const box = document.getElementById('toast-box');
     if (!box) return;
-    var div = document.createElement('div');
-    div.className = 'toast ' + type;
-    div.innerHTML = '<span>' + sanitize(msg) + '</span><span style="cursor:pointer;margin-left:10px;" onclick="this.parentElement.remove()">✕</span>';
+    const div = document.createElement('div');
+    div.className = `toast ${type}`;
+    div.innerHTML = `<span>${sanitize(msg)}</span><span style="cursor:pointer;margin-left:10px;" onclick="this.parentElement.remove()">✕</span>`;
     box.appendChild(div);
-    setTimeout(function() { if(div.parentElement) div.remove(); }, 3000);
+    setTimeout(() => { if(div.parentElement) div.remove(); }, 3000);
+}
+
+// ============================================
+// REALTIME LISTENERS (SYNC OTOMATIS)
+// ============================================
+function setupRealtimeListeners() {
+    for(let i = 0; i < unsubscribeListeners.length; i++) {
+        if(unsubscribeListeners[i]) unsubscribeListeners[i]();
+    }
+    unsubscribeListeners = [];
+    
+    if(!currentUser) return;
+    
+    if(currentUser.role === 'admin') {
+        const usersUnsub = usersCollection.onSnapshot(() => {
+            ui.renderAdminTable();
+            ui.updateStats();
+        });
+        unsubscribeListeners.push(usersUnsub);
+        
+        const sessionsUnsub = sessionsCollection.onSnapshot(() => {
+            ui.renderOnlinePlayers();
+            ui.updateStats();
+        });
+        unsubscribeListeners.push(sessionsUnsub);
+        
+        const commandsUnsub = commandsCollection.onSnapshot(() => {
+            ui.updateAdminBadge();
+            const cmdPanel = document.getElementById('command-panel');
+            if(cmdPanel && !cmdPanel.classList.contains('hidden')) {
+                ui.renderCommandTable();
+            }
+            ui.updateStats();
+        });
+        unsubscribeListeners.push(commandsUnsub);
+        
+        const purchasesUnsub = purchasesCollection.onSnapshot(() => {
+            const purchasePanel = document.getElementById('purchase-panel');
+            if(purchasePanel && !purchasePanel.classList.contains('hidden')) {
+                ui.renderPurchaseLog();
+            }
+            ui.updateStats();
+        });
+        unsubscribeListeners.push(purchasesUnsub);
+    } else {
+        const userUnsub = usersCollection.doc(currentUser.username).onSnapshot((doc) => {
+            if(doc.exists) {
+                const newData = doc.data();
+                if(currentUser.coin !== newData.coin) {
+                    currentUser.coin = newData.coin;
+                    localStorage.setItem('duskveil_session', JSON.stringify({
+                        username: currentUser.username,
+                        role: currentUser.role,
+                        coin: currentUser.coin
+                    }));
+                    ui.updateHeader();
+                    showToast(`💰 Saldo diperbarui: ${newData.coin.toLocaleString()} koin`, 'info');
+                }
+            }
+        });
+        unsubscribeListeners.push(userUnsub);
+    }
 }
 
 // ============================================
 // UI FUNCTIONS
 // ============================================
-var ui = {
+const ui = {
     switchTab: function(tab) {
-        var loginForm = document.getElementById('form-login');
-        var registerForm = document.getElementById('form-register');
-        var btns = document.querySelectorAll('.tab-btn');
+        const loginForm = document.getElementById('form-login');
+        const registerForm = document.getElementById('form-register');
+        const btns = document.querySelectorAll('.tab-btn');
         
         if (tab === 'login') {
             if(loginForm) loginForm.classList.remove('hidden');
@@ -235,18 +172,18 @@ var ui = {
     },
 
     showPage: function(page) {
-        var authSection = document.getElementById('auth-section');
-        var navbar = document.getElementById('navbar');
-        var storeSection = document.getElementById('store-section');
-        var adminDashboard = document.getElementById('admin-dashboard');
+        const authSection = document.getElementById('auth-section');
+        const navbar = document.getElementById('navbar');
+        const storeSection = document.getElementById('store-section');
+        const adminDashboard = document.getElementById('admin-dashboard');
         
         if (page === 'auth') {
             if(authSection) authSection.classList.remove('hidden');
             if(navbar) navbar.classList.add('hidden');
             if(storeSection) storeSection.classList.add('hidden');
             if(adminDashboard) adminDashboard.classList.add('hidden');
-            var cmdPanel = document.getElementById('command-panel');
-            var purchasePanel = document.getElementById('purchase-panel');
+            const cmdPanel = document.getElementById('command-panel');
+            const purchasePanel = document.getElementById('purchase-panel');
             if(cmdPanel) cmdPanel.classList.add('hidden');
             if(purchasePanel) purchasePanel.classList.add('hidden');
         } else {
@@ -254,57 +191,59 @@ var ui = {
             if(navbar) navbar.classList.remove('hidden');
             
             if (currentUser) {
-                var isAdmin = currentUser.role === 'admin';
-                var adminNotice = document.getElementById('admin-notice');
+                const isAdmin = currentUser.role === 'admin';
+                const adminNotice = document.getElementById('admin-notice');
                 if(adminNotice) adminNotice.classList.toggle('hidden', !isAdmin);
                 
-                var commandsBtn = document.getElementById('nav-commands-btn');
+                const commandsBtn = document.getElementById('nav-commands-btn');
                 if(commandsBtn) commandsBtn.classList.toggle('hidden', !isAdmin);
                 
-                var purchasesBtn = document.getElementById('nav-purchases-btn');
+                const purchasesBtn = document.getElementById('nav-purchases-btn');
                 if(purchasesBtn) purchasesBtn.classList.toggle('hidden', !isAdmin);
                 
-                var adminBtn = document.getElementById('nav-admin-btn');
+                const adminBtn = document.getElementById('nav-admin-btn');
                 if(adminBtn) adminBtn.classList.toggle('hidden', !isAdmin);
                 
                 if (isAdmin) {
                     if(adminDashboard) adminDashboard.classList.remove('hidden');
                     if(storeSection) storeSection.classList.add('hidden');
-                    ui.renderAdminTable();
-                    ui.updateStats();
+                    this.renderAdminTable();
+                    this.updateStats();
+                    this.renderOnlinePlayers();
                 } else {
                     if(storeSection) storeSection.classList.remove('hidden');
                     if(adminDashboard) adminDashboard.classList.add('hidden');
                 }
-                ui.updateHeader();
-                ui.updateAdminBadge();
+                this.updateHeader();
+                this.updateAdminBadge();
             }
         }
     },
 
     updateHeader: function() {
         if (!currentUser) return;
-        var usernameEl = document.getElementById('nav-username');
-        var coinEl = document.getElementById('nav-coin');
-        var avatarEl = document.getElementById('nav-avatar');
+        const usernameEl = document.getElementById('nav-username');
+        const coinEl = document.getElementById('nav-coin');
+        const avatarEl = document.getElementById('nav-avatar');
         if(usernameEl) usernameEl.innerText = sanitize(currentUser.username);
         if(coinEl) coinEl.innerText = (currentUser.coin || 0).toLocaleString();
         if(avatarEl) avatarEl.innerText = currentUser.username.charAt(0).toUpperCase();
     },
 
-    updateAdminBadge: function() {
-        var badge = document.getElementById('pending-badge');
+    updateAdminBadge: async function() {
+        const badge = document.getElementById('pending-badge');
         if (!badge) return;
-        if(currentUser && currentUser.role === 'admin') {
-            var pending = commands.filter(function(c) { return c.status === 'pending'; });
-            var count = pending.length;
-            badge.textContent = count;
-            badge.style.display = count > 0 ? 'inline-flex' : 'none';
+        if(currentUser && currentUser.role === 'admin' && firebaseReady) {
+            try {
+                const snapshot = await commandsCollection.where('status', '==', 'pending').get();
+                badge.textContent = snapshot.size;
+                badge.style.display = snapshot.size > 0 ? 'inline-flex' : 'none';
+            } catch(e) { console.error(e); }
         }
     },
 
     renderStore: function() {
-        var products = {
+        const products = {
             kontrak: [
                 { name: 'Basic Contract', price: 10000, cmd: 'basic' },
                 { name: 'Premium Contract', price: 35000, cmd: 'premium' },
@@ -323,159 +262,241 @@ var ui = {
                 { name: 'All Skills Max', price: 100000, type: 'all' }
             ]
         };
+        productsCache = products;
 
-        var kontrakGrid = document.getElementById('grid-kontrak');
+        const kontrakGrid = document.getElementById('grid-kontrak');
         if(kontrakGrid) {
             kontrakGrid.innerHTML = '';
-            for(var i = 0; i < products.kontrak.length; i++) {
-                var item = products.kontrak[i];
-                kontrakGrid.innerHTML += '<div class="card">' +
-                    '<div class="card-img">📜</div>' +
-                    '<div class="card-content">' +
-                    '<div class="card-title">' + item.name + '</div>' +
-                    '<div class="card-type">Buku Kontrak</div>' +
-                    '<div class="card-price">' + item.price.toLocaleString() + ' 🪙</div>' +
-                    '<button class="btn-buy" onclick="app.buyBook(\'' + item.name + '\', ' + item.price + ', \'' + item.cmd + '\')">BELI SEKARANG</button>' +
-                    '</div></div>';
+            for(let i = 0; i < products.kontrak.length; i++) {
+                const item = products.kontrak[i];
+                kontrakGrid.innerHTML += `<div class="card">
+                    <div class="card-img">📜</div>
+                    <div class="card-content">
+                        <div class="card-title">${item.name}</div>
+                        <div class="card-type">Buku Kontrak</div>
+                        <div class="card-price">${item.price.toLocaleString()} 🪙</div>
+                        <button class="btn-buy" onclick="app.buyBook('${item.name}', ${item.price}, '${item.cmd}')">BELI SEKARANG</button>
+                    </div>
+                </div>`;
             }
         }
 
-        var rankGrid = document.getElementById('grid-rank');
+        const rankGrid = document.getElementById('grid-rank');
         if(rankGrid) {
             rankGrid.innerHTML = '';
-            for(var j = 0; j < products.rank.length; j++) {
-                var item = products.rank[j];
-                rankGrid.innerHTML += '<div class="card">' +
-                    '<div class="card-img">👑</div>' +
-                    '<div class="card-content">' +
-                    '<div class="card-title">' + item.name + '</div>' +
-                    '<div class="card-type">Rank Server</div>' +
-                    '<div class="card-price">' + item.price.toLocaleString() + ' 🪙</div>' +
-                    '<button class="btn-buy" onclick="app.buyRank(\'' + item.name + '\', ' + item.price + ', \'' + item.cmd + '\')">BELI SEKARANG</button>' +
-                    '</div></div>';
+            for(let i = 0; i < products.rank.length; i++) {
+                const item = products.rank[i];
+                rankGrid.innerHTML += `<div class="card">
+                    <div class="card-img">👑</div>
+                    <div class="card-content">
+                        <div class="card-title">${item.name}</div>
+                        <div class="card-type">Rank Server</div>
+                        <div class="card-price">${item.price.toLocaleString()} 🪙</div>
+                        <button class="btn-buy" onclick="app.buyRank('${item.name}', ${item.price}, '${item.cmd}')">BELI SEKARANG</button>
+                    </div>
+                </div>`;
             }
         }
 
-        var skillGrid = document.getElementById('grid-skill');
+        const skillGrid = document.getElementById('grid-skill');
         if(skillGrid) {
             skillGrid.innerHTML = '';
-            for(var k = 0; k < products.skill.length; k++) {
-                var item = products.skill[k];
-                var onclickAttr = item.type === 'single' ? 'app.showSkillSelection(' + item.price + ')' : 'app.buyAllSkills(' + item.price + ')';
-                skillGrid.innerHTML += '<div class="card">' +
-                    '<div class="card-img">⚔️</div>' +
-                    '<div class="card-content">' +
-                    '<div class="card-title">' + item.name + '</div>' +
-                    '<div class="card-type">Skill</div>' +
-                    '<div class="card-price">' + item.price.toLocaleString() + ' 🪙</div>' +
-                    '<button class="btn-buy" onclick="' + onclickAttr + '">BELI SEKARANG</button>' +
-                    '</div></div>';
+            for(let i = 0; i < products.skill.length; i++) {
+                const item = products.skill[i];
+                const onclickAttr = item.type === 'single' ? `app.showSkillSelection(${item.price})` : `app.buyAllSkills(${item.price})`;
+                skillGrid.innerHTML += `<div class="card">
+                    <div class="card-img">⚔️</div>
+                    <div class="card-content">
+                        <div class="card-title">${item.name}</div>
+                        <div class="card-type">Skill</div>
+                        <div class="card-price">${item.price.toLocaleString()} 🪙</div>
+                        <button class="btn-buy" onclick="${onclickAttr}">BELI SEKARANG</button>
+                    </div>
+                </div>`;
             }
         }
     },
 
-    renderAdminTable: function() {
-        var tbody = document.getElementById('user-table-body');
+    renderAdminTable: async function() {
+        const tbody = document.getElementById('user-table-body');
         if (!tbody) return;
-        
-        var userList = Object.values(users);
-        if (userList.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Belum ada member</td></tr>';
+        if(!firebaseReady) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Memuat...</td></tr>';
             return;
         }
         
-        var html = '';
-        for(var i = 0; i < userList.length; i++) {
-            var u = userList[i];
-            html += '<tr>' +
-                '<td>' + sanitize(u.username) + '</td>' +
-                '<td><span class="status-badge ' + (u.role === 'admin' ? 'status-admin' : 'status-member') + '">' + u.role.toUpperCase() + '</span></td>' +
-                '<td style="color:var(--gold);">' + (u.coin || 0).toLocaleString() + '</td>' +
-                '<td>' + (u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '-') + '</td>' +
-                '<td><button class="btn-tbl-edit" onclick="app.fillAdmin(\'' + sanitize(u.username) + '\', ' + (u.coin || 0) + ')">Edit</button></td>' +
-                '</tr>';
+        try {
+            const snapshot = await usersCollection.get();
+            const users = [];
+            snapshot.forEach(doc => users.push(doc.data()));
+            
+            if(users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Belum ada member</td></tr>';
+                return;
+            }
+            
+            let html = '';
+            for(let i = 0; i < users.length; i++) {
+                const u = users[i];
+                html += `<tr>
+                    <td>${sanitize(u.username)}</td>
+                    <td><span class="status-badge ${u.role === 'admin' ? 'status-admin' : 'status-member'}">${u.role.toUpperCase()}</span></td>
+                    <td style="color:var(--gold);">${(u.coin || 0).toLocaleString()}</td>
+                    <td>${u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '-'}</td>
+                    <td><button class="btn-tbl-edit" onclick="app.fillAdmin('${sanitize(u.username)}', ${u.coin || 0})">Edit</button></td>
+                </tr>`;
+            }
+            tbody.innerHTML = html;
+        } catch(e) {
+            console.error(e);
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Error loading data</td></tr>';
         }
-        tbody.innerHTML = html;
     },
 
-    updateStats: function() {
-        var userList = Object.values(users);
-        var totalCoin = 0;
-        for(var i = 0; i < userList.length; i++) {
-            totalCoin += (userList[i].coin || 0);
-        }
-        var pending = commands.filter(function(c) { return c.status === 'pending'; });
-        
-        var totalUsersEl = document.getElementById('stat-total-users');
-        var totalCoinEl = document.getElementById('stat-total-coins');
-        var totalPurchasesEl = document.getElementById('stat-total-purchases');
-        var pendingCommandsEl = document.getElementById('stat-pending-commands');
-        
-        if(totalUsersEl) totalUsersEl.textContent = userList.length;
-        if(totalCoinEl) totalCoinEl.textContent = totalCoin.toLocaleString();
-        if(totalPurchasesEl) totalPurchasesEl.textContent = purchases.length;
-        if(pendingCommandsEl) pendingCommandsEl.textContent = pending.length;
+    updateStats: async function() {
+        if(!firebaseReady) return;
+        try {
+            const usersSnapshot = await usersCollection.get();
+            let totalCoin = 0;
+            let userCount = 0;
+            usersSnapshot.forEach(doc => {
+                const data = doc.data();
+                userCount++;
+                totalCoin += (data.coin || 0);
+            });
+            
+            const purchasesSnapshot = await purchasesCollection.get();
+            const commandsSnapshot = await commandsCollection.where('status', '==', 'pending').get();
+            
+            const totalUsersEl = document.getElementById('stat-total-users');
+            const totalCoinEl = document.getElementById('stat-total-coins');
+            const totalPurchasesEl = document.getElementById('stat-total-purchases');
+            const pendingCommandsEl = document.getElementById('stat-pending-commands');
+            
+            if(totalUsersEl) totalUsersEl.textContent = userCount;
+            if(totalCoinEl) totalCoinEl.textContent = totalCoin.toLocaleString();
+            if(totalPurchasesEl) totalPurchasesEl.textContent = purchasesSnapshot.size;
+            if(pendingCommandsEl) pendingCommandsEl.textContent = commandsSnapshot.size;
+        } catch(e) { console.error(e); }
     },
 
-    renderCommandTable: function() {
-        var tbody = document.getElementById('command-table-body');
-        if (!tbody) return;
-        
-        if (commands.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Tidak ada command</td></tr>';
+    renderOnlinePlayers: async function() {
+        const container = document.getElementById('online-players-list');
+        const countEl = document.getElementById('online-count');
+        if (!container) return;
+        if(!firebaseReady) {
+            container.innerHTML = '<div style="color:var(--text3);padding:8px 0;">Memuat...</div>';
             return;
         }
         
-        var html = '';
-        for(var i = 0; i < commands.length; i++) {
-            var cmd = commands[i];
-            var statusClass = cmd.status === 'pending' ? 'status-pending' : 'status-executed';
-            var statusText = cmd.status === 'pending' ? '⏳ Pending' : '✅ Executed';
-            var actions = cmd.status === 'pending' 
-                ? '<button class="btn-execute" onclick="app.markExecuted(\'' + cmd.id + '\')">✓ Tandai Selesai</button>'
-                : '<button class="btn-copy" onclick="app.deleteCommand(\'' + cmd.id + '\')">🗑 Hapus</button>';
-            var timeStr = cmd.timestamp ? new Date(cmd.timestamp).toLocaleString() : '-';
-            html += '<tr>' +
-                '<td style="font-size:0.75rem;">' + timeStr + '</td>' +
-                '<td><code style="background:#1a1a2a;padding:4px 8px;border-radius:4px;">' + sanitize(cmd.command) + '</code><br><small>👤 ' + sanitize(cmd.username) + '</small></td>' +
-                '<td><span class="command-status ' + statusClass + '">' + statusText + '</span></td>' +
-                '<td>' + actions + '</td>' +
-                '</tr>';
-        }
-        tbody.innerHTML = html;
+        try {
+            const cutoff = Date.now() - 30000;
+            const snapshot = await sessionsCollection.get();
+            const online = [];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                if(data.lastSeen > cutoff) online.push(data);
+            });
+            
+            if(countEl) countEl.textContent = online.length;
+            
+            if(online.length === 0) {
+                container.innerHTML = '<div style="color:var(--text3);padding:8px 0;">Tidak ada user online</div>';
+                return;
+            }
+            
+            let html = '';
+            for(let i = 0; i < online.length; i++) {
+                const s = online[i];
+                html += `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border);">
+                    <span style="width:8px;height:8px;border-radius:50%;background:#10b981;"></span>
+                    <span style="flex:1;">${sanitize(s.username)}</span>
+                    <span style="font-size:0.75rem;color:var(--text3);">${s.role}</span>
+                </div>`;
+            }
+            container.innerHTML = html;
+        } catch(e) { console.error(e); }
     },
 
-    renderPurchaseLog: function() {
-        var tbody = document.getElementById('purchase-log-body');
+    renderCommandTable: async function() {
+        const tbody = document.getElementById('command-table-body');
         if (!tbody) return;
-        
-        if (purchases.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Belum ada pembelian</td></tr>';
+        if(!firebaseReady) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Memuat...</td></tr>';
             return;
         }
         
-        var html = '';
-        for(var i = 0; i < purchases.length; i++) {
-            var p = purchases[i];
-            var statusClass = p.status === 'pending' ? 'status-pending' : 'status-executed';
-            var statusText = p.status === 'pending' ? '⏳ Pending' : '✅ Selesai';
-            var timeStr = p.timestamp ? new Date(p.timestamp).toLocaleString() : '-';
-            html += '<tr>' +
-                '<td style="font-size:0.75rem;">' + timeStr + '</td>' +
-                '<td>' + sanitize(p.username) + '</td>' +
-                '<td>' + sanitize(p.itemName) + '</td>' +
-                '<td style="color:var(--gold);">' + (p.price || 0).toLocaleString() + ' 🪙</td>' +
-                '<td><span class="command-status ' + statusClass + '">' + statusText + '</span></td>' +
-                '</tr>';
+        try {
+            const snapshot = await commandsCollection.orderBy('timestamp', 'desc').limit(100).get();
+            const commands = [];
+            snapshot.forEach(doc => commands.push({ id: doc.id, ...doc.data() }));
+            
+            if(commands.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Tidak ada command</td></tr>';
+                return;
+            }
+            
+            let html = '';
+            for(let i = 0; i < commands.length; i++) {
+                const cmd = commands[i];
+                const statusClass = cmd.status === 'pending' ? 'status-pending' : 'status-executed';
+                const statusText = cmd.status === 'pending' ? '⏳ Pending' : '✅ Executed';
+                const actions = cmd.status === 'pending' 
+                    ? `<button class="btn-execute" onclick="app.markExecuted('${cmd.id}')">✓ Tandai Selesai</button>`
+                    : `<button class="btn-copy" onclick="app.deleteCommand('${cmd.id}')">🗑 Hapus</button>`;
+                const timeStr = cmd.timestamp ? new Date(cmd.timestamp.toDate()).toLocaleString() : '-';
+                html += `<tr>
+                    <td style="font-size:0.75rem;">${timeStr}</td>
+                    <td><code style="background:#1a1a2a;padding:4px 8px;border-radius:4px;">${sanitize(cmd.command)}</code><br><small>👤 ${sanitize(cmd.username)}</small></td>
+                    <td><span class="command-status ${statusClass}">${statusText}</span></td>
+                    <td>${actions}</td>
+                </tr>`;
+            }
+            tbody.innerHTML = html;
+        } catch(e) { console.error(e); }
+    },
+
+    renderPurchaseLog: async function() {
+        const tbody = document.getElementById('purchase-log-body');
+        if (!tbody) return;
+        if(!firebaseReady) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Memuat...</td></tr>';
+            return;
         }
-        tbody.innerHTML = html;
+        
+        try {
+            const snapshot = await purchasesCollection.orderBy('timestamp', 'desc').limit(50).get();
+            const purchases = [];
+            snapshot.forEach(doc => purchases.push(doc.data()));
+            
+            if(purchases.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Belum ada pembelian</td></tr>';
+                return;
+            }
+            
+            let html = '';
+            for(let i = 0; i < purchases.length; i++) {
+                const p = purchases[i];
+                const statusClass = p.status === 'pending' ? 'status-pending' : 'status-executed';
+                const statusText = p.status === 'pending' ? '⏳ Pending' : '✅ Selesai';
+                const timeStr = p.timestamp ? new Date(p.timestamp.toDate()).toLocaleString() : '-';
+                html += `<tr>
+                    <td style="font-size:0.75rem;">${timeStr}</td>
+                    <td>${sanitize(p.username)}</td>
+                    <td>${sanitize(p.itemName)}</td>
+                    <td style="color:var(--gold);">${(p.price || 0).toLocaleString()} 🪙</td>
+                    <td><span class="command-status ${statusClass}">${statusText}</span></td>
+                </tr>`;
+            }
+            tbody.innerHTML = html;
+        } catch(e) { console.error(e); }
     },
 
     showCommandPanel: function() {
-        var store = document.getElementById('store-section');
-        var admin = document.getElementById('admin-dashboard');
-        var purchase = document.getElementById('purchase-panel');
-        var command = document.getElementById('command-panel');
+        const store = document.getElementById('store-section');
+        const admin = document.getElementById('admin-dashboard');
+        const purchase = document.getElementById('purchase-panel');
+        const command = document.getElementById('command-panel');
         if(store) store.classList.add('hidden');
         if(admin) admin.classList.add('hidden');
         if(purchase) purchase.classList.add('hidden');
@@ -484,10 +505,10 @@ var ui = {
     },
 
     showPurchasePanel: function() {
-        var store = document.getElementById('store-section');
-        var admin = document.getElementById('admin-dashboard');
-        var command = document.getElementById('command-panel');
-        var purchase = document.getElementById('purchase-panel');
+        const store = document.getElementById('store-section');
+        const admin = document.getElementById('admin-dashboard');
+        const command = document.getElementById('command-panel');
+        const purchase = document.getElementById('purchase-panel');
         if(store) store.classList.add('hidden');
         if(admin) admin.classList.add('hidden');
         if(command) command.classList.add('hidden');
@@ -496,23 +517,24 @@ var ui = {
     },
 
     showAdminPanel: function() {
-        var store = document.getElementById('store-section');
-        var command = document.getElementById('command-panel');
-        var purchase = document.getElementById('purchase-panel');
-        var admin = document.getElementById('admin-dashboard');
+        const store = document.getElementById('store-section');
+        const command = document.getElementById('command-panel');
+        const purchase = document.getElementById('purchase-panel');
+        const admin = document.getElementById('admin-dashboard');
         if(store) store.classList.add('hidden');
         if(command) command.classList.add('hidden');
         if(purchase) purchase.classList.add('hidden');
         if(admin) admin.classList.remove('hidden');
         this.renderAdminTable();
         this.updateStats();
+        this.renderOnlinePlayers();
     },
 
     showStorePanel: function() {
-        var admin = document.getElementById('admin-dashboard');
-        var command = document.getElementById('command-panel');
-        var purchase = document.getElementById('purchase-panel');
-        var store = document.getElementById('store-section');
+        const admin = document.getElementById('admin-dashboard');
+        const command = document.getElementById('command-panel');
+        const purchase = document.getElementById('purchase-panel');
+        const store = document.getElementById('store-section');
         if(admin) admin.classList.add('hidden');
         if(command) command.classList.add('hidden');
         if(purchase) purchase.classList.add('hidden');
@@ -520,11 +542,11 @@ var ui = {
     },
 
     showSkillModal: function(price, callback) {
-        var modal = document.getElementById('skill-modal');
-        var container = document.getElementById('skill-list-container');
+        const modal = document.getElementById('skill-modal');
+        const container = document.getElementById('skill-list-container');
         if (!container) return;
         
-        var skillsList = [
+        const skillsList = [
             { name: 'Penambangan', id: 'mining' },
             { name: 'Pertanian', id: 'farming' },
             { name: 'Pertarungan', id: 'combat' },
@@ -535,24 +557,24 @@ var ui = {
         ];
         
         container.innerHTML = '';
-        for(var i = 0; i < skillsList.length; i++) {
-            var skill = skillsList[i];
-            var div = document.createElement('div');
+        for(let i = 0; i < skillsList.length; i++) {
+            const skill = skillsList[i];
+            const div = document.createElement('div');
             div.className = 'skill-option';
-            div.innerHTML = '<span>⚔️ ' + skill.name + '</span><span style="color:var(--gold);">' + price.toLocaleString() + ' 🪙</span>';
-            div.onclick = (function(skillName, cb) {
-                return function() {
+            div.innerHTML = `<span>⚔️ ${skill.name}</span><span style="color:var(--gold);">${price.toLocaleString()} 🪙</span>`;
+            div.onclick = ((skillName) => {
+                return () => {
                     ui.closeSkillModal();
-                    cb(skillName, price);
+                    callback(skillName, price);
                 };
-            })(skill.name, callback);
+            })(skill.name);
             container.appendChild(div);
         }
         if(modal) modal.classList.remove('hidden');
     },
 
     closeSkillModal: function() {
-        var modal = document.getElementById('skill-modal');
+        const modal = document.getElementById('skill-modal');
         if(modal) modal.classList.add('hidden');
     }
 };
@@ -560,69 +582,75 @@ var ui = {
 // ============================================
 // APP FUNCTIONS
 // ============================================
-var app = {
-    init: function() {
-        var overlay = document.getElementById('loading-overlay');
-        if(overlay) overlay.style.display = 'none';
+const app = {
+    init: async function() {
+        const overlay = document.getElementById('loading-overlay');
         
-        loadLocalData();
-        ui.renderStore();
-        
-        // Add export/import buttons to admin panel
-        this.addSyncButtons();
-        
-        var savedSession = sessionStorage.getItem('duskveil_session');
-        if (savedSession) {
-            try {
-                var userData = JSON.parse(savedSession);
-                if (users[userData.username]) {
-                    currentUser = users[userData.username];
-                    ui.showPage('store');
-                    ui.updateHeader();
-                    ui.updateAdminBadge();
-                } else {
-                    sessionStorage.removeItem('duskveil_session');
+        try {
+            await loadFirebase();
+            
+            if(overlay) overlay.style.display = 'none';
+            
+            // Create default admin
+            const adminDoc = await usersCollection.doc('admin').get();
+            if(!adminDoc.exists) {
+                await usersCollection.doc('admin').set({
+                    username: 'admin',
+                    password: 'dusk@gnt3ng303#',
+                    role: 'admin',
+                    coin: 999999,
+                    createdAt: new Date().toISOString()
+                });
+                console.log('Admin created');
+            }
+            
+            ui.renderStore();
+            
+            const savedSession = localStorage.getItem('duskveil_session');
+            if(savedSession) {
+                try {
+                    const userData = JSON.parse(savedSession);
+                    const userDoc = await usersCollection.doc(userData.username).get();
+                    if(userDoc.exists) {
+                        currentUser = userDoc.data();
+                        await sessionsCollection.doc(currentUser.username).set({
+                            username: currentUser.username,
+                            role: currentUser.role,
+                            lastSeen: Date.now(),
+                            loginAt: Date.now()
+                        });
+                        setupRealtimeListeners();
+                        ui.showPage('store');
+                        ui.updateHeader();
+                        ui.updateAdminBadge();
+                        this.startHeartbeat();
+                    } else {
+                        localStorage.removeItem('duskveil_session');
+                        ui.showPage('auth');
+                    }
+                } catch(e) {
+                    localStorage.removeItem('duskveil_session');
                     ui.showPage('auth');
                 }
-            } catch(e) {
-                sessionStorage.removeItem('duskveil_session');
+            } else {
                 ui.showPage('auth');
             }
-        } else {
+            
+            this.initParticles();
+        } catch(e) {
+            console.error('Init error:', e);
+            if(overlay) overlay.style.display = 'none';
+            showToast('Error: ' + e.message, 'error');
             ui.showPage('auth');
         }
-        
-        this.initParticles();
-    },
-    
-    addSyncButtons: function() {
-        // Add sync buttons to admin panel
-        setTimeout(function() {
-            var quickActions = document.querySelector('.quick-actions');
-            if (quickActions && !document.getElementById('sync-export-btn')) {
-                var exportBtn = document.createElement('button');
-                exportBtn.id = 'sync-export-btn';
-                exportBtn.className = 'quick-action-btn';
-                exportBtn.setAttribute('onclick', 'app.exportData()');
-                exportBtn.innerHTML = '<span>📤</span><div><strong>Export Data</strong><small>Backup ke file JSON</small></div>';
-                quickActions.appendChild(exportBtn);
-                
-                var importBtn = document.createElement('button');
-                importBtn.id = 'sync-import-btn';
-                importBtn.className = 'quick-action-btn';
-                importBtn.setAttribute('onclick', 'app.importData()');
-                importBtn.innerHTML = '<span>📥</span><div><strong>Import Data</strong><small>Restore dari file JSON</small></div>';
-                quickActions.appendChild(importBtn);
-            }
-        }, 500);
     },
 
     initParticles: function() {
-        var container = document.getElementById('particles');
+        const container = document.getElementById('particles');
         if (!container) return;
         container.innerHTML = '';
-        for (var i = 0; i < 30; i++) {
-            var p = document.createElement('div');
+        for (let i = 0; i < 30; i++) {
+            const p = document.createElement('div');
             p.className = 'particle';
             p.style.left = Math.random() * 100 + '%';
             p.style.top = Math.random() * 100 + '%';
@@ -632,75 +660,27 @@ var app = {
         }
     },
 
-    exportData: function() {
-        var data = {
-            users: users,
-            commands: commands,
-            purchases: purchases,
-            exportedAt: new Date().toISOString()
-        };
-        var jsonStr = JSON.stringify(data, null, 2);
-        var blob = new Blob([jsonStr], { type: 'application/json' });
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = 'duskveil_data_' + new Date().toISOString().slice(0,19).replace(/:/g, '-') + '.json';
-        a.click();
-        URL.revokeObjectURL(url);
-        showToast('✅ Data diexport! Transfer file ke device lain.', 'success');
+    startHeartbeat: function() {
+        setInterval(() => {
+            if(currentUser && firebaseReady) {
+                sessionsCollection.doc(currentUser.username).update({
+                    lastSeen: Date.now()
+                }).catch(() => {});
+            }
+        }, 10000);
     },
 
-    importData: function() {
-        var input = document.createElement('input');
-        input.type = 'file';
-        input.accept = 'application/json';
-        input.onchange = function(e) {
-            var file = e.target.files[0];
-            var reader = new FileReader();
-            reader.onload = function(evt) {
-                try {
-                    var data = JSON.parse(evt.target.result);
-                    if (data.users) {
-                        users = data.users;
-                        saveUsersToLocal();
-                    }
-                    if (data.commands) {
-                        commands = data.commands;
-                        saveCommandsToLocal();
-                    }
-                    if (data.purchases) {
-                        purchases = data.purchases;
-                        savePurchasesToLocal();
-                    }
-                    ui.renderAdminTable();
-                    ui.updateStats();
-                    ui.renderCommandTable();
-                    ui.renderPurchaseLog();
-                    
-                    // Update current user if needed
-                    if (currentUser && users[currentUser.username]) {
-                        currentUser.coin = users[currentUser.username].coin;
-                        sessionStorage.setItem('duskveil_session', JSON.stringify(currentUser));
-                        ui.updateHeader();
-                    }
-                    
-                    showToast('✅ Data berhasil diimport!', 'success');
-                    setTimeout(function() { location.reload(); }, 1500);
-                } catch(err) {
-                    showToast('File tidak valid!', 'error');
-                }
-            };
-            reader.readAsText(file);
-        };
-        input.click();
-    },
-
-    handleLogin: function(e) {
+    handleLogin: async function(e) {
         e.preventDefault();
         
-        var username = document.getElementById('login-user').value.trim();
-        var password = document.getElementById('login-pass').value;
-        var btn = document.getElementById('login-btn');
+        if(!firebaseReady) {
+            showToast('Sistem masih memuat, tunggu sebentar...', 'error');
+            return;
+        }
+        
+        const username = document.getElementById('login-user').value.trim();
+        const password = document.getElementById('login-pass').value;
+        const btn = document.getElementById('login-btn');
         
         if (!username || !password) {
             showToast('Isi username dan password!', 'error');
@@ -712,59 +692,65 @@ var app = {
             btn.innerHTML = '<span class="btn-text">Memuat...</span><span class="btn-arrow">→</span>';
         }
         
-        setTimeout(function() {
-            try {
-                var user = users[username];
-                if (!user) {
-                    showToast('Username tidak ditemukan!', 'error');
-                    if(btn) {
-                        btn.disabled = false;
-                        btn.innerHTML = '<span class="btn-text">MASUK SERVER</span><span class="btn-arrow">→</span>';
-                    }
-                    return;
-                }
-                if (user.password !== password) {
-                    showToast('Password salah!', 'error');
-                    if(btn) {
-                        btn.disabled = false;
-                        btn.innerHTML = '<span class="btn-text">MASUK SERVER</span><span class="btn-arrow">→</span>';
-                    }
-                    return;
-                }
-                
-                currentUser = user;
-                sessionStorage.setItem('duskveil_session', JSON.stringify({
-                    username: user.username,
-                    role: user.role,
-                    coin: user.coin
-                }));
-                
-                showToast('Selamat datang, ' + sanitize(username) + '!', 'success');
-                ui.updateHeader();
-                ui.showPage('store');
-                ui.updateAdminBadge();
-                
-                document.getElementById('login-user').value = '';
-                document.getElementById('login-pass').value = '';
-                
-            } catch(err) {
-                showToast('Login gagal: ' + err.message, 'error');
-            } finally {
-                if(btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = '<span class="btn-text">MASUK SERVER</span><span class="btn-arrow">→</span>';
-                }
+        try {
+            const userDoc = await usersCollection.doc(username).get();
+            if(!userDoc.exists) {
+                showToast('Username tidak ditemukan!', 'error');
+                return;
             }
-        }, 100);
+            
+            const user = userDoc.data();
+            if(user.password !== password) {
+                showToast('Password salah!', 'error');
+                return;
+            }
+            
+            currentUser = user;
+            localStorage.setItem('duskveil_session', JSON.stringify({
+                username: user.username,
+                role: user.role,
+                coin: user.coin
+            }));
+            
+            await sessionsCollection.doc(username).set({
+                username: username,
+                role: user.role,
+                lastSeen: Date.now(),
+                loginAt: Date.now()
+            });
+            
+            setupRealtimeListeners();
+            showToast(`Selamat datang, ${sanitize(username)}!`, 'success');
+            ui.updateHeader();
+            ui.showPage('store');
+            ui.updateAdminBadge();
+            this.startHeartbeat();
+            
+            document.getElementById('login-user').value = '';
+            document.getElementById('login-pass').value = '';
+            
+        } catch(err) {
+            showToast('Login gagal: ' + err.message, 'error');
+        } finally {
+            if(btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="btn-text">MASUK SERVER</span><span class="btn-arrow">→</span>';
+            }
+        }
     },
 
-    handleRegister: function(e) {
+    handleRegister: async function(e) {
         e.preventDefault();
         
-        var username = document.getElementById('reg-user').value.trim();
-        var password = document.getElementById('reg-pass').value;
-        var confirmPass = document.getElementById('reg-pass-confirm').value;
-        var btn = document.getElementById('register-btn');
+        if(!firebaseReady) {
+            showToast('Sistem masih memuat, tunggu sebentar...', 'error');
+            return;
+        }
+        
+        const username = document.getElementById('reg-user').value.trim();
+        const password = document.getElementById('reg-pass').value;
+        const confirmPass = document.getElementById('reg-pass-confirm').value;
+        const btn = document.getElementById('register-btn');
         
         if (!username || !password || !confirmPass) {
             showToast('Isi semua field!', 'error');
@@ -782,7 +768,7 @@ var app = {
             showToast('Password minimal 6 karakter!', 'error');
             return;
         }
-        if (username === 'admin') {
+        if(username === 'admin') {
             showToast('Username tidak tersedia!', 'error');
             return;
         }
@@ -792,333 +778,399 @@ var app = {
             btn.innerHTML = '<span class="btn-text">Memuat...</span><span class="btn-arrow">→</span>';
         }
         
-        setTimeout(function() {
-            try {
-                if (users[username]) {
-                    showToast('Username sudah digunakan!', 'error');
-                    if(btn) {
-                        btn.disabled = false;
-                        btn.innerHTML = '<span class="btn-text">DAFTAR SEKARANG</span><span class="btn-arrow">→</span>';
-                    }
-                    return;
-                }
-                
-                users[username] = {
-                    username: username,
-                    password: password,
-                    role: 'member',
-                    coin: 1000,
-                    createdAt: new Date().toISOString()
-                };
-                saveUsersToLocal();
-                
-                showToast('Registrasi berhasil! Silakan login.', 'success');
-                ui.switchTab('login');
-                document.getElementById('login-user').value = username;
-                
-                document.getElementById('reg-user').value = '';
-                document.getElementById('reg-pass').value = '';
-                document.getElementById('reg-pass-confirm').value = '';
-                
-            } catch(err) {
-                showToast('Registrasi gagal: ' + err.message, 'error');
-            } finally {
-                if(btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = '<span class="btn-text">DAFTAR SEKARANG</span><span class="btn-arrow">→</span>';
-                }
+        try {
+            const userDoc = await usersCollection.doc(username).get();
+            if(userDoc.exists) {
+                showToast('Username sudah digunakan!', 'error');
+                return;
             }
-        }, 100);
+            
+            await usersCollection.doc(username).set({
+                username: username,
+                password: password,
+                role: 'member',
+                coin: 1000,
+                createdAt: new Date().toISOString()
+            });
+            
+            showToast('Registrasi berhasil! Silakan login.', 'success');
+            ui.switchTab('login');
+            document.getElementById('login-user').value = username;
+            
+            document.getElementById('reg-user').value = '';
+            document.getElementById('reg-pass').value = '';
+            document.getElementById('reg-pass-confirm').value = '';
+            
+        } catch(err) {
+            showToast('Registrasi gagal: ' + err.message, 'error');
+        } finally {
+            if(btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="btn-text">DAFTAR SEKARANG</span><span class="btn-arrow">→</span>';
+            }
+        }
     },
 
-    logout: function() {
+    logout: async function() {
+        if(currentUser && firebaseReady) {
+            try {
+                await sessionsCollection.doc(currentUser.username).delete();
+            } catch(e) {}
+        }
+        for(let i = 0; i < unsubscribeListeners.length; i++) {
+            if(unsubscribeListeners[i]) unsubscribeListeners[i]();
+        }
+        unsubscribeListeners = [];
         currentUser = null;
-        sessionStorage.removeItem('duskveil_session');
+        localStorage.removeItem('duskveil_session');
         ui.showPage('auth');
         showToast('Anda telah keluar.');
     },
 
-    buyBook: function(itemName, price, cmd) {
+    buyBook: async function(itemName, price, cmd) {
+        if (!firebaseReady) { showToast('Sistem masih memuat...', 'error'); return; }
         if (!currentUser) { showToast('Silakan login!', 'error'); return; }
-        if ((currentUser.coin || 0) < price) { showToast('Koin tidak cukup! Butuh ' + price.toLocaleString(), 'error'); return; }
-        if (!confirm('Beli ' + itemName + ' seharga ' + price.toLocaleString() + ' koin?')) return;
+        if ((currentUser.coin || 0) < price) { showToast(`Koin tidak cukup! Butuh ${price.toLocaleString()}`, 'error'); return; }
+        if (!confirm(`Beli ${itemName} seharga ${price.toLocaleString()} koin?`)) return;
         
-        var newCoin = (currentUser.coin || 0) - price;
-        users[currentUser.username].coin = newCoin;
-        currentUser.coin = newCoin;
-        saveUsersToLocal();
-        sessionStorage.setItem('duskveil_session', JSON.stringify({username: currentUser.username, role: currentUser.role, coin: currentUser.coin}));
-        ui.updateHeader();
-        
-        var newCommand = {
-            id: Date.now(),
-            command: 'ksl give ' + currentUser.username + ' ' + cmd,
-            username: currentUser.username,
-            itemName: itemName,
-            status: 'pending',
-            timestamp: new Date().toISOString()
-        };
-        commands.unshift(newCommand);
-        saveCommandsToLocal();
-        
-        var newPurchase = {
-            id: Date.now(),
-            username: currentUser.username,
-            itemName: itemName,
-            price: price,
-            status: 'pending',
-            timestamp: new Date().toISOString()
-        };
-        purchases.unshift(newPurchase);
-        savePurchasesToLocal();
-        
-        showToast('✅ ' + itemName + ' berhasil dibeli!', 'success');
-        ui.updateAdminBadge();
+        try {
+            const newCoin = (currentUser.coin || 0) - price;
+            await usersCollection.doc(currentUser.username).update({ coin: newCoin });
+            currentUser.coin = newCoin;
+            localStorage.setItem('duskveil_session', JSON.stringify({
+                username: currentUser.username,
+                role: currentUser.role,
+                coin: currentUser.coin
+            }));
+            ui.updateHeader();
+            
+            await commandsCollection.add({
+                command: `ksl give ${currentUser.username} ${cmd}`,
+                username: currentUser.username,
+                itemName: itemName,
+                status: 'pending',
+                timestamp: new Date()
+            });
+            
+            await purchasesCollection.add({
+                username: currentUser.username,
+                itemName: itemName,
+                price: price,
+                status: 'pending',
+                timestamp: new Date()
+            });
+            
+            showToast(`✅ ${itemName} berhasil dibeli!`, 'success');
+            ui.updateAdminBadge();
+        } catch(err) {
+            showToast('Gagal: ' + err.message, 'error');
+        }
     },
 
-    buyRank: function(rankName, price, rankId) {
+    buyRank: async function(rankName, price, rankId) {
+        if (!firebaseReady) { showToast('Sistem masih memuat...', 'error'); return; }
         if (!currentUser) { showToast('Silakan login!', 'error'); return; }
-        if ((currentUser.coin || 0) < price) { showToast('Koin tidak cukup! Butuh ' + price.toLocaleString(), 'error'); return; }
-        if (!confirm('Beli rank ' + rankName + ' seharga ' + price.toLocaleString() + ' koin?')) return;
+        if ((currentUser.coin || 0) < price) { showToast(`Koin tidak cukup! Butuh ${price.toLocaleString()}`, 'error'); return; }
+        if (!confirm(`Beli rank ${rankName} seharga ${price.toLocaleString()} koin?`)) return;
         
-        var newCoin = (currentUser.coin || 0) - price;
-        users[currentUser.username].coin = newCoin;
-        currentUser.coin = newCoin;
-        saveUsersToLocal();
-        sessionStorage.setItem('duskveil_session', JSON.stringify({username: currentUser.username, role: currentUser.role, coin: currentUser.coin}));
-        ui.updateHeader();
-        
-        var commandsList = [
-            'lp user ' + currentUser.username + ' parent set ' + rankId.toLowerCase(),
-            'pex user ' + currentUser.username + ' group set ' + rankId.toLowerCase(),
-            'manuadd ' + currentUser.username + ' ' + rankName,
-            'group addplayer ' + currentUser.username + ' ' + rankId.toLowerCase()
-        ];
-        
-        for(var i = 0; i < commandsList.length; i++) {
-            commands.unshift({
-                id: Date.now() + i,
-                command: commandsList[i],
+        try {
+            const newCoin = (currentUser.coin || 0) - price;
+            await usersCollection.doc(currentUser.username).update({ coin: newCoin });
+            currentUser.coin = newCoin;
+            localStorage.setItem('duskveil_session', JSON.stringify({
                 username: currentUser.username,
-                itemName: 'Rank: ' + rankName,
+                role: currentUser.role,
+                coin: currentUser.coin
+            }));
+            ui.updateHeader();
+            
+            const commandsList = [
+                `lp user ${currentUser.username} parent set ${rankId.toLowerCase()}`,
+                `pex user ${currentUser.username} group set ${rankId.toLowerCase()}`,
+                `manuadd ${currentUser.username} ${rankName}`,
+                `group addplayer ${currentUser.username} ${rankId.toLowerCase()}`
+            ];
+            
+            for(let i = 0; i < commandsList.length; i++) {
+                await commandsCollection.add({
+                    command: commandsList[i],
+                    username: currentUser.username,
+                    itemName: `Rank: ${rankName}`,
+                    status: 'pending',
+                    timestamp: new Date()
+                });
+            }
+            
+            await purchasesCollection.add({
+                username: currentUser.username,
+                itemName: `Rank: ${rankName}`,
+                price: price,
                 status: 'pending',
-                timestamp: new Date().toISOString()
+                timestamp: new Date()
             });
+            
+            showToast(`✅ Rank ${rankName} berhasil dibeli!`, 'success');
+            ui.updateAdminBadge();
+        } catch(err) {
+            showToast('Gagal: ' + err.message, 'error');
         }
-        saveCommandsToLocal();
-        
-        purchases.unshift({
-            id: Date.now(),
-            username: currentUser.username,
-            itemName: 'Rank: ' + rankName,
-            price: price,
-            status: 'pending',
-            timestamp: new Date().toISOString()
-        });
-        savePurchasesToLocal();
-        
-        showToast('✅ Rank ' + rankName + ' berhasil dibeli!', 'success');
-        ui.updateAdminBadge();
     },
 
     showSkillSelection: function(price) {
+        if (!firebaseReady) { showToast('Sistem masih memuat...', 'error'); return; }
         if (!currentUser) { showToast('Silakan login!', 'error'); return; }
         if ((currentUser.coin || 0) < price) { showToast('Koin tidak cukup!', 'error'); return; }
-        ui.showSkillModal(price, function(skillName, actualPrice) {
+        ui.showSkillModal(price, (skillName, actualPrice) => {
             app.upgradeSkill(skillName, actualPrice);
         });
     },
 
-    upgradeSkill: function(skillName, price) {
+    upgradeSkill: async function(skillName, price) {
+        if (!firebaseReady) return;
         if (!currentUser) return;
-        var level = prompt('Level untuk skill ' + skillName + ' (1-1000):', '100');
+        const level = prompt(`Level untuk skill ${skillName} (1-1000):`, "100");
         if (!level || isNaN(level) || level < 1 || level > 1000) {
             showToast('Level tidak valid!', 'error');
             return;
         }
-        if (!confirm('Upgrade ' + skillName + ' ke level ' + level + ' seharga ' + price.toLocaleString() + ' koin?')) return;
+        if (!confirm(`Upgrade ${skillName} ke level ${level} seharga ${price.toLocaleString()} koin?`)) return;
         
-        var newCoin = (currentUser.coin || 0) - price;
-        users[currentUser.username].coin = newCoin;
-        currentUser.coin = newCoin;
-        saveUsersToLocal();
-        sessionStorage.setItem('duskveil_session', JSON.stringify({username: currentUser.username, role: currentUser.role, coin: currentUser.coin}));
-        ui.updateHeader();
-        
-        var skillId = skillName.toLowerCase().replace(/ /g, '');
-        commands.unshift({
-            id: Date.now(),
-            command: 'skill setlevel ' + currentUser.username + ' ' + skillId + ' ' + level,
-            username: currentUser.username,
-            itemName: 'Skill: ' + skillName + ' → Lv.' + level,
-            status: 'pending',
-            timestamp: new Date().toISOString()
-        });
-        saveCommandsToLocal();
-        
-        purchases.unshift({
-            id: Date.now(),
-            username: currentUser.username,
-            itemName: 'Skill: ' + skillName + ' → Lv.' + level,
-            price: price,
-            status: 'pending',
-            timestamp: new Date().toISOString()
-        });
-        savePurchasesToLocal();
-        
-        showToast('✅ Skill ' + skillName + ' diupgrade ke level ' + level + '!', 'success');
-        ui.updateAdminBadge();
+        try {
+            const newCoin = (currentUser.coin || 0) - price;
+            await usersCollection.doc(currentUser.username).update({ coin: newCoin });
+            currentUser.coin = newCoin;
+            localStorage.setItem('duskveil_session', JSON.stringify({
+                username: currentUser.username,
+                role: currentUser.role,
+                coin: currentUser.coin
+            }));
+            ui.updateHeader();
+            
+            const skillId = skillName.toLowerCase().replace(/ /g, '');
+            await commandsCollection.add({
+                command: `skill setlevel ${currentUser.username} ${skillId} ${level}`,
+                username: currentUser.username,
+                itemName: `Skill: ${skillName} → Lv.${level}`,
+                status: 'pending',
+                timestamp: new Date()
+            });
+            
+            await purchasesCollection.add({
+                username: currentUser.username,
+                itemName: `Skill: ${skillName} → Lv.${level}`,
+                price: price,
+                status: 'pending',
+                timestamp: new Date()
+            });
+            
+            showToast(`✅ Skill ${skillName} diupgrade ke level ${level}!`, 'success');
+            ui.updateAdminBadge();
+        } catch(err) {
+            showToast('Gagal: ' + err.message, 'error');
+        }
     },
 
-    buyAllSkills: function(price) {
+    buyAllSkills: async function(price) {
+        if (!firebaseReady) { showToast('Sistem masih memuat...', 'error'); return; }
         if (!currentUser) { showToast('Silakan login!', 'error'); return; }
         if ((currentUser.coin || 0) < price) { showToast('Koin tidak cukup!', 'error'); return; }
-        var maxLevel = prompt('Set semua skill ke level berapa? (1-1000):', '1000');
+        const maxLevel = prompt("Set semua skill ke level berapa? (1-1000):", "1000");
         if (!maxLevel || isNaN(maxLevel) || maxLevel < 1 || maxLevel > 1000) {
             showToast('Level tidak valid!', 'error');
             return;
         }
-        if (!confirm('Set ALL SKILLS ke level ' + maxLevel + ' seharga ' + price.toLocaleString() + ' koin?')) return;
+        if (!confirm(`Set ALL SKILLS ke level ${maxLevel} seharga ${price.toLocaleString()} koin?`)) return;
         
-        var newCoin = (currentUser.coin || 0) - price;
-        users[currentUser.username].coin = newCoin;
-        currentUser.coin = newCoin;
-        saveUsersToLocal();
-        sessionStorage.setItem('duskveil_session', JSON.stringify({username: currentUser.username, role: currentUser.role, coin: currentUser.coin}));
-        ui.updateHeader();
-        
-        commands.unshift({
-            id: Date.now(),
-            command: 'skill setall ' + currentUser.username + ' ' + maxLevel,
-            username: currentUser.username,
-            itemName: 'All Skills → Lv.' + maxLevel,
-            status: 'pending',
-            timestamp: new Date().toISOString()
-        });
-        saveCommandsToLocal();
-        
-        purchases.unshift({
-            id: Date.now(),
-            username: currentUser.username,
-            itemName: 'All Skills → Lv.' + maxLevel,
-            price: price,
-            status: 'pending',
-            timestamp: new Date().toISOString()
-        });
-        savePurchasesToLocal();
-        
-        showToast('✅ Semua skill diset ke level ' + maxLevel + '!', 'success');
-        ui.updateAdminBadge();
-    },
-
-    markExecuted: function(id) {
-        for(var i = 0; i < commands.length; i++) {
-            if(commands[i].id == id) {
-                commands[i].status = 'executed';
-                break;
-            }
+        try {
+            const newCoin = (currentUser.coin || 0) - price;
+            await usersCollection.doc(currentUser.username).update({ coin: newCoin });
+            currentUser.coin = newCoin;
+            localStorage.setItem('duskveil_session', JSON.stringify({
+                username: currentUser.username,
+                role: currentUser.role,
+                coin: currentUser.coin
+            }));
+            ui.updateHeader();
+            
+            await commandsCollection.add({
+                command: `skill setall ${currentUser.username} ${maxLevel}`,
+                username: currentUser.username,
+                itemName: `All Skills → Lv.${maxLevel}`,
+                status: 'pending',
+                timestamp: new Date()
+            });
+            
+            await purchasesCollection.add({
+                username: currentUser.username,
+                itemName: `All Skills → Lv.${maxLevel}`,
+                price: price,
+                status: 'pending',
+                timestamp: new Date()
+            });
+            
+            showToast(`✅ Semua skill diset ke level ${maxLevel}!`, 'success');
+            ui.updateAdminBadge();
+        } catch(err) {
+            showToast('Gagal: ' + err.message, 'error');
         }
-        saveCommandsToLocal();
-        ui.renderCommandTable();
-        ui.updateAdminBadge();
-        showToast('Command ditandai selesai!', 'success');
     },
 
-    deleteCommand: function(id) {
+    markExecuted: async function(id) {
+        if(!firebaseReady) return;
+        try {
+            await commandsCollection.doc(id).update({ status: 'executed' });
+            ui.renderCommandTable();
+            ui.updateAdminBadge();
+            showToast('Command ditandai selesai!', 'success');
+        } catch(err) {
+            showToast('Gagal: ' + err.message, 'error');
+        }
+    },
+
+    deleteCommand: async function(id) {
+        if(!firebaseReady) return;
         if (!confirm('Hapus command ini?')) return;
-        for(var i = 0; i < commands.length; i++) {
-            if(commands[i].id == id) {
-                commands.splice(i, 1);
-                break;
+        try {
+            await commandsCollection.doc(id).delete();
+            ui.renderCommandTable();
+            ui.updateAdminBadge();
+            showToast('Command dihapus!', 'success');
+        } catch(err) {
+            showToast('Gagal: ' + err.message, 'error');
+        }
+    },
+
+    executeAllCommands: async function() {
+        if(!firebaseReady) return;
+        try {
+            const snapshot = await commandsCollection.where('status', '==', 'pending').get();
+            const commands = [];
+            snapshot.forEach(doc => commands.push({ id: doc.id, command: doc.data().command }));
+            
+            if(commands.length === 0) {
+                showToast('Tidak ada command pending!', 'error');
+                return;
             }
+            
+            let commandsText = '';
+            for(let i = 0; i < commands.length; i++) {
+                commandsText += commands[i].command + '\n';
+            }
+            await navigator.clipboard.writeText(commandsText);
+            
+            for(let i = 0; i < commands.length; i++) {
+                await commandsCollection.doc(commands[i].id).update({ status: 'executed' });
+            }
+            
+            showToast(`${commands.length} command sudah di-copy! Paste di console server.`, 'success');
+            ui.updateAdminBadge();
+            ui.renderCommandTable();
+        } catch(err) {
+            showToast('Gagal: ' + err.message, 'error');
         }
-        saveCommandsToLocal();
-        ui.renderCommandTable();
-        ui.updateAdminBadge();
-        showToast('Command dihapus!', 'success');
     },
 
-    executeAllCommands: function() {
-        var pending = commands.filter(function(c) { return c.status === 'pending'; });
-        if (pending.length === 0) {
-            showToast('Tidak ada command pending!', 'error');
-            return;
+    copyAllCommands: async function() {
+        if(!firebaseReady) return;
+        try {
+            const snapshot = await commandsCollection.where('status', '==', 'pending').get();
+            const commands = [];
+            snapshot.forEach(doc => commands.push(doc.data().command));
+            
+            if(commands.length === 0) {
+                showToast('Tidak ada command!', 'error');
+                return;
+            }
+            
+            const commandsText = commands.join('\n');
+            await navigator.clipboard.writeText(commandsText);
+            showToast(`${commands.length} command di-copy!`, 'success');
+        } catch(err) {
+            showToast('Gagal: ' + err.message, 'error');
         }
-        
-        var commandsText = '';
-        for(var i = 0; i < pending.length; i++) {
-            commandsText += pending[i].command + '\n';
-        }
-        
-        navigator.clipboard.writeText(commandsText);
-        
-        for(var j = 0; j < pending.length; j++) {
-            pending[j].status = 'executed';
-        }
-        saveCommandsToLocal();
-        
-        showToast(pending.length + ' command sudah di-copy! Paste di console server.', 'success');
-        ui.updateAdminBadge();
-        ui.renderCommandTable();
     },
 
-    copyAllCommands: function() {
-        var pending = commands.filter(function(c) { return c.status === 'pending'; });
-        if (pending.length === 0) {
-            showToast('Tidak ada command!', 'error');
-            return;
+    exportCommands: async function() {
+        if(!firebaseReady) return;
+        try {
+            const snapshot = await commandsCollection.get();
+            const commands = [];
+            snapshot.forEach(doc => commands.push({ id: doc.id, ...doc.data() }));
+            
+            const data = JSON.stringify(commands, null, 2);
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `commands_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('Commands exported!', 'success');
+        } catch(err) {
+            showToast('Gagal: ' + err.message, 'error');
         }
-        var commandsText = '';
-        for(var i = 0; i < pending.length; i++) {
-            commandsText += pending[i].command + '\n';
-        }
-        navigator.clipboard.writeText(commandsText);
-        showToast(pending.length + ' command di-copy!', 'success');
     },
 
-    exportCommands: function() {
-        var data = JSON.stringify(commands, null, 2);
-        var blob = new Blob([data], { type: 'application/json' });
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = 'commands_' + Date.now() + '.json';
-        a.click();
-        URL.revokeObjectURL(url);
-        showToast('Commands exported!', 'success');
-    },
-
-    clearAllCommands: function() {
+    clearAllCommands: async function() {
+        if(!firebaseReady) return;
         if (!confirm('Hapus SEMUA command?')) return;
-        commands = [];
-        saveCommandsToLocal();
-        showToast('Semua command dihapus!', 'success');
-        ui.updateAdminBadge();
-        ui.renderCommandTable();
+        try {
+            const snapshot = await commandsCollection.get();
+            for(let i = 0; i < snapshot.docs.length; i++) {
+                await commandsCollection.doc(snapshot.docs[i].id).delete();
+            }
+            showToast('Semua command dihapus!', 'success');
+            ui.updateAdminBadge();
+            ui.renderCommandTable();
+        } catch(err) {
+            showToast('Gagal: ' + err.message, 'error');
+        }
     },
 
-    exportAllData: function() {
-        var data = JSON.stringify({ users: users, purchases: purchases, commands: commands }, null, 2);
-        var blob = new Blob([data], { type: 'application/json' });
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = 'backup_' + Date.now() + '.json';
-        a.click();
-        URL.revokeObjectURL(url);
-        showToast('Data exported!', 'success');
+    exportAllData: async function() {
+        if(!firebaseReady) return;
+        try {
+            const usersSnapshot = await usersCollection.get();
+            const users = [];
+            usersSnapshot.forEach(doc => users.push(doc.data()));
+            
+            const purchasesSnapshot = await purchasesCollection.get();
+            const purchases = [];
+            purchasesSnapshot.forEach(doc => purchases.push(doc.data()));
+            
+            const commandsSnapshot = await commandsCollection.get();
+            const commands = [];
+            commandsSnapshot.forEach(doc => commands.push(doc.data()));
+            
+            const data = JSON.stringify({ users, purchases, commands }, null, 2);
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `backup_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('Data exported!', 'success');
+        } catch(err) {
+            showToast('Gagal: ' + err.message, 'error');
+        }
     },
 
     fillAdmin: function(username, coin) {
-        var searchInput = document.getElementById('admin-search');
-        var coinInput = document.getElementById('admin-coin');
+        const searchInput = document.getElementById('admin-search');
+        const coinInput = document.getElementById('admin-coin');
         if(searchInput) searchInput.value = username;
         if(coinInput) coinInput.value = coin;
     },
 
-    adminSetCoin: function() {
-        var username = document.getElementById('admin-search')?.value.trim();
-        var coinValue = document.getElementById('admin-coin')?.value;
+    adminSetCoin: async function() {
+        if(!firebaseReady) {
+            showToast('Sistem masih memuat...', 'error');
+            return;
+        }
+        
+        const username = document.getElementById('admin-search')?.value.trim();
+        const coinValue = document.getElementById('admin-coin')?.value;
         
         if (!username) {
             showToast('Masukkan username!', 'error');
@@ -1129,23 +1181,31 @@ var app = {
             return;
         }
         
-        if (!users[username]) {
-            showToast('User tidak ditemukan!', 'error');
-            return;
+        try {
+            const userDoc = await usersCollection.doc(username).get();
+            if(!userDoc.exists) {
+                showToast('User tidak ditemukan!', 'error');
+                return;
+            }
+            
+            await usersCollection.doc(username).update({ coin: parseInt(coinValue) });
+            showToast(`✅ Koin ${sanitize(username)} → ${parseInt(coinValue).toLocaleString()}`, 'success');
+            
+            if(currentUser && currentUser.username === username) {
+                currentUser.coin = parseInt(coinValue);
+                localStorage.setItem('duskveil_session', JSON.stringify({
+                    username: currentUser.username,
+                    role: currentUser.role,
+                    coin: currentUser.coin
+                }));
+                ui.updateHeader();
+            }
+            
+            ui.renderAdminTable();
+            document.getElementById('admin-coin').value = '';
+        } catch(err) {
+            showToast('Gagal: ' + err.message, 'error');
         }
-        
-        users[username].coin = parseInt(coinValue);
-        saveUsersToLocal();
-        showToast('✅ Koin ' + sanitize(username) + ' → ' + parseInt(coinValue).toLocaleString(), 'success');
-        
-        if (currentUser && currentUser.username === username) {
-            currentUser.coin = parseInt(coinValue);
-            sessionStorage.setItem('duskveil_session', JSON.stringify({username: currentUser.username, role: currentUser.role, coin: currentUser.coin}));
-            ui.updateHeader();
-        }
-        
-        ui.renderAdminTable();
-        document.getElementById('admin-coin').value = '';
     }
 };
 
@@ -1154,6 +1214,6 @@ window.app = app;
 window.ui = ui;
 
 // Start app
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', () => {
     app.init();
 });
