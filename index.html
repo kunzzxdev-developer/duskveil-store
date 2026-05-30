@@ -6,7 +6,7 @@
     <title>DuskVeilSMP — Official Store</title>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <!-- Turnstile dihapus sementara -->
 </head>
 <body>
     <div class="particles" id="particles"></div>
@@ -75,9 +75,9 @@
                             </div>
                         </div>
 
-                        <div class="cf-turnstile-wrapper">
-                            <div class="cf-turnstile" id="turnstile-login" data-sitekey="0x4AAAAAADWhIT5hFjEKoRvwiD6Re9f3S74" data-theme="dark" data-callback="onLoginVerified"></div>
-                        </div>
+                        <!-- Turnstile dihapus sementara -->
+                        <input type="hidden" id="turnstile-token" value="bypassed">
+
                         <button type="submit" class="btn-primary" id="login-btn">
                             <span class="btn-text">MASUK SERVER</span>
                             <span class="btn-arrow">→</span>
@@ -106,9 +106,9 @@
                             </div>
                         </div>
 
-                        <div class="cf-turnstile-wrapper">
-                            <div class="cf-turnstile" id="turnstile-register" data-sitekey="0x4AAAAAADWhIT5hFjEKoRvwiD6Re9f3S74" data-theme="dark" data-callback="onRegisterVerified"></div>
-                        </div>
+                        <!-- Turnstile dihapus sementara -->
+                        <input type="hidden" id="turnstile-token-reg" value="bypassed">
+
                         <button type="submit" class="btn-primary" id="register-btn">
                             <span class="btn-text">DAFTAR SEKARANG</span>
                             <span class="btn-arrow">→</span>
@@ -186,7 +186,12 @@
                         <div class="control-group control-group--btn"><button class="btn-success" onclick="app.adminSetCoin()">SET KOIN</button></div>
                     </div>
                     <div class="table-wrapper">
-                        <table><thead><tr><th>Username</th><th>Role</th><th>Saldo Koin</th><th>Terdaftar</th><th>Aksi</th></tr></thead><tbody id="user-table-body"></tbody></table>
+                        <table>
+                            <thead>
+                                <tr><th>Username</th><th>Role</th><th>Saldo Koin</th><th>Terdaftar</th><th>Aksi</th></tr>
+                            </thead>
+                            <tbody id="user-table-body"></tbody>
+                        </table>
                     </div>
                 </div>
                 <div class="panel-container">
@@ -219,7 +224,12 @@
                         <button class="btn-secondary btn-sm" onclick="ui.showAdminPanel()">← Kembali</button>
                     </div>
                     <div class="table-wrapper">
-                        <table><thead><tr><th>Waktu</th><th>Username</th><th>Item</th><th>Harga</th><th>Status</th></tr></thead><tbody id="purchase-log-body"></tbody></table>
+                        <table>
+                            <thead>
+                                <tr><th>Waktu</th><th>Username</th><th>Item</th><th>Harga</th><th>Status</th></tr>
+                            </thead>
+                            <tbody id="purchase-log-body"></tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -233,7 +243,12 @@
                         <button class="btn-secondary btn-sm" onclick="ui.showAdminPanel()">← Kembali</button>
                     </div>
                     <div class="table-wrapper">
-                        <table id="command-table"><thead><tr><th>Waktu</th><th>Command</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="command-table-body"></tbody></table>
+                        <table id="command-table">
+                            <thead>
+                                <tr><th>Waktu</th><th>Command</th><th>Status</th><th>Aksi</th></tr>
+                            </thead>
+                            <tbody id="command-table-body"></tbody>
+                        </table>
                     </div>
                     <div class="cmd-actions">
                         <button class="btn-primary btn-sm" onclick="app.executeAllCommands()">▶ Execute All Auto</button>
@@ -267,10 +282,6 @@
     <div id="toast-box"></div>
 
     <script type="module" src="script.js"></script>
-    <script>
-        function onLoginVerified(token) { if(window.app) window.app.turnstileToken = token; }
-        function onRegisterVerified(token) { if(window.app) window.app.turnstileToken = token; }
-    </script>
 
 </body>
 </html>
