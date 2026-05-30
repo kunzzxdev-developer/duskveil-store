@@ -1,18 +1,22 @@
 // ============================================
-// DuskVeilSMP - SIMPLE STORAGE (TANPA FIREBASE)
+// DuskVeilSMP - SYNC VIA GOOGLE SHEETS
 // ============================================
 
-// Data Storage
+// Google Sheets Web App URL (Anda perlu buat Google Apps Script)
+// Saya akan buatkan kode Google Apps Script terpisah
+const SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbxxxxx/exec';
+
+// Data lokal
 let users = {};
 let commands = [];
 let purchases = [];
 let currentUser = null;
+let syncInterval = null;
 
 // ============================================
-// INIT DATA
+// LOAD DATA DARI LOCAL STORAGE
 // ============================================
-function loadData() {
-    // Load users
+function loadLocalData() {
     const savedUsers = localStorage.getItem('duskveil_users');
     if (savedUsers) {
         users = JSON.parse(savedUsers);
@@ -23,41 +27,170 @@ function loadData() {
                 password: 'dusk@gnt3ng303#',
                 role: 'admin',
                 coin: 999999,
-                createdAt: new Date().toISOString()
+                deviceId: Date.now().toString(),
+                lastSync: new Date().toISOString()
             }
         };
-        localStorage.setItem('duskveil_users', JSON.stringify(users));
+        saveUsersToLocal();
     }
     
-    // Load commands
     const savedCommands = localStorage.getItem('duskveil_commands');
     if (savedCommands) {
         commands = JSON.parse(savedCommands);
     } else {
         commands = [];
-        localStorage.setItem('duskveil_commands', JSON.stringify(commands));
+        saveCommandsToLocal();
     }
     
-    // Load purchases
     const savedPurchases = localStorage.getItem('duskveil_purchases');
     if (savedPurchases) {
         purchases = JSON.parse(savedPurchases);
     } else {
         purchases = [];
-        localStorage.setItem('duskveil_purchases', JSON.stringify(purchases));
+        savePurchasesToLocal();
     }
 }
 
-function saveUsers() {
+function saveUsersToLocal() {
     localStorage.setItem('duskveil_users', JSON.stringify(users));
 }
 
-function saveCommands() {
+function saveCommandsToLocal() {
     localStorage.setItem('duskveil_commands', JSON.stringify(commands));
 }
 
-function savePurchases() {
+function savePurchasesToLocal() {
     localStorage.setItem('duskveil_purchases', JSON.stringify(purchases));
+}
+
+// ============================================
+// SYNC KE SERVER (Google Sheets)
+// ============================================
+async function syncToServer() {
+    if (!currentUser || currentUser.role !== 'admin') return;
+    
+    try {
+        const syncData = {
+            action: 'sync',
+            deviceId: localStorage.getItem('deviceId') || generateDeviceId(),
+            users: users,
+            commands: commands,
+            purchases: purchases,
+            timestamp: new Date().toISOString()
+        };
+        
+        // Kirim ke Google Sheets
+        const response = await fetch(SHEETS_API_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(syncData)
+        });
+        
+        console.log('Sync sent to server');
+    } catch(e) {
+        console.error('Sync error:', e);
+    }
+}
+
+async function syncFromServer() {
+    if (!currentUser || currentUser.role !== 'admin') return;
+    
+    try {
+        const deviceId = localStorage.getItem('deviceId') || generateDeviceId();
+        const response = await fetch(SHEETS_API_URL + '?action=get&deviceId=' + deviceId);
+        const data = await response.json();
+        
+        if (data && data.users) {
+            // Update local data with server data
+            let changed = false;
+            
+            // Check users changes
+            for (let username in data.users) {
+                if (!users[username] || users[username].coin !== data.users[username].coin) {
+                    users[username] = data.users[username];
+                    changed = true;
+                }
+            }
+            
+            if (changed) {
+                saveUsersToLocal();
+                ui.renderAdminTable();
+                ui.updateStats();
+                
+                // Update current user if needed
+                if (currentUser && users[currentUser.username]) {
+                    currentUser.coin = users[currentUser.username].coin;
+                    sessionStorage.setItem('duskveil_session', JSON.stringify(currentUser));
+                    ui.updateHeader();
+                    showToast('💰 Data tersinkron dari device lain!', 'info');
+                }
+            }
+        }
+    } catch(e) {
+        console.error('Sync from server error:', e);
+    }
+}
+
+function generateDeviceId() {
+    const id = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
+    localStorage.setItem('deviceId', id);
+    return id;
+}
+
+// ============================================
+// KARENA GOOGLE SHEETS RIBET, PAKAI SIMPLE STORAGE DULU
+// TAPI SAYA BUATKAN VERSI YANG BISA MANUAL EXPORT/IMPORT
+// ============================================
+
+// Simple version: Export/Import data manually antar device
+function exportData() {
+    const data = {
+        users: users,
+        commands: commands,
+        purchases: purchases,
+        exportedAt: new Date().toISOString()
+    };
+    const jsonStr = JSON.stringify(data, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'duskveil_backup_' + new Date().toISOString().slice(0,19).replace(/:/g, '-') + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Data diexport! Transfer file ke device lain.', 'success');
+}
+
+function importData() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json';
+    input.onchange = function(e) {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            try {
+                const data = JSON.parse(evt.target.result);
+                if (data.users) users = data.users;
+                if (data.commands) commands = data.commands;
+                if (data.purchases) purchases = data.purchases;
+                saveUsersToLocal();
+                saveCommandsToLocal();
+                savePurchasesToLocal();
+                ui.renderAdminTable();
+                ui.updateStats();
+                ui.renderCommandTable();
+                ui.renderPurchaseLog();
+                showToast('Data berhasil diimport!', 'success');
+                location.reload();
+            } catch(err) {
+                showToast('File tidak valid!', 'error');
+            }
+        };
+        reader.readAsText(file);
+    };
+    input.click();
 }
 
 // ============================================
@@ -429,17 +562,15 @@ var ui = {
 // ============================================
 var app = {
     init: function() {
-        // Hide loading overlay
         var overlay = document.getElementById('loading-overlay');
         if(overlay) overlay.style.display = 'none';
         
-        // Load all data
-        loadData();
-        
-        // Render store
+        loadLocalData();
         ui.renderStore();
         
-        // Check existing session
+        // Add export/import buttons to admin panel
+        this.addSyncButtons();
+        
         var savedSession = sessionStorage.getItem('duskveil_session');
         if (savedSession) {
             try {
@@ -461,8 +592,29 @@ var app = {
             ui.showPage('auth');
         }
         
-        // Init particles
         this.initParticles();
+    },
+    
+    addSyncButtons: function() {
+        // Add sync buttons to admin panel
+        setTimeout(function() {
+            var quickActions = document.querySelector('.quick-actions');
+            if (quickActions && !document.getElementById('sync-export-btn')) {
+                var exportBtn = document.createElement('button');
+                exportBtn.id = 'sync-export-btn';
+                exportBtn.className = 'quick-action-btn';
+                exportBtn.setAttribute('onclick', 'app.exportData()');
+                exportBtn.innerHTML = '<span>📤</span><div><strong>Export Data</strong><small>Backup ke file JSON</small></div>';
+                quickActions.appendChild(exportBtn);
+                
+                var importBtn = document.createElement('button');
+                importBtn.id = 'sync-import-btn';
+                importBtn.className = 'quick-action-btn';
+                importBtn.setAttribute('onclick', 'app.importData()');
+                importBtn.innerHTML = '<span>📥</span><div><strong>Import Data</strong><small>Restore dari file JSON</small></div>';
+                quickActions.appendChild(importBtn);
+            }
+        }, 500);
     },
 
     initParticles: function() {
@@ -478,6 +630,69 @@ var app = {
             p.style.setProperty('--delay', (Math.random() * 5) + 's');
             container.appendChild(p);
         }
+    },
+
+    exportData: function() {
+        var data = {
+            users: users,
+            commands: commands,
+            purchases: purchases,
+            exportedAt: new Date().toISOString()
+        };
+        var jsonStr = JSON.stringify(data, null, 2);
+        var blob = new Blob([jsonStr], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'duskveil_data_' + new Date().toISOString().slice(0,19).replace(/:/g, '-') + '.json';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('✅ Data diexport! Transfer file ke device lain.', 'success');
+    },
+
+    importData: function() {
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'application/json';
+        input.onchange = function(e) {
+            var file = e.target.files[0];
+            var reader = new FileReader();
+            reader.onload = function(evt) {
+                try {
+                    var data = JSON.parse(evt.target.result);
+                    if (data.users) {
+                        users = data.users;
+                        saveUsersToLocal();
+                    }
+                    if (data.commands) {
+                        commands = data.commands;
+                        saveCommandsToLocal();
+                    }
+                    if (data.purchases) {
+                        purchases = data.purchases;
+                        savePurchasesToLocal();
+                    }
+                    ui.renderAdminTable();
+                    ui.updateStats();
+                    ui.renderCommandTable();
+                    ui.renderPurchaseLog();
+                    
+                    // Update current user if needed
+                    if (currentUser && users[currentUser.username]) {
+                        currentUser.coin = users[currentUser.username].coin;
+                        sessionStorage.setItem('duskveil_session', JSON.stringify(currentUser));
+                        ui.updateHeader();
+                    }
+                    
+                    showToast('✅ Data berhasil diimport!', 'success');
+                    setTimeout(function() { location.reload(); }, 1500);
+                } catch(err) {
+                    showToast('File tidak valid!', 'error');
+                }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
     },
 
     handleLogin: function(e) {
@@ -595,7 +810,7 @@ var app = {
                     coin: 1000,
                     createdAt: new Date().toISOString()
                 };
-                saveUsers();
+                saveUsersToLocal();
                 
                 showToast('Registrasi berhasil! Silakan login.', 'success');
                 ui.switchTab('login');
@@ -631,7 +846,7 @@ var app = {
         var newCoin = (currentUser.coin || 0) - price;
         users[currentUser.username].coin = newCoin;
         currentUser.coin = newCoin;
-        saveUsers();
+        saveUsersToLocal();
         sessionStorage.setItem('duskveil_session', JSON.stringify({username: currentUser.username, role: currentUser.role, coin: currentUser.coin}));
         ui.updateHeader();
         
@@ -644,7 +859,7 @@ var app = {
             timestamp: new Date().toISOString()
         };
         commands.unshift(newCommand);
-        saveCommands();
+        saveCommandsToLocal();
         
         var newPurchase = {
             id: Date.now(),
@@ -655,7 +870,7 @@ var app = {
             timestamp: new Date().toISOString()
         };
         purchases.unshift(newPurchase);
-        savePurchases();
+        savePurchasesToLocal();
         
         showToast('✅ ' + itemName + ' berhasil dibeli!', 'success');
         ui.updateAdminBadge();
@@ -669,7 +884,7 @@ var app = {
         var newCoin = (currentUser.coin || 0) - price;
         users[currentUser.username].coin = newCoin;
         currentUser.coin = newCoin;
-        saveUsers();
+        saveUsersToLocal();
         sessionStorage.setItem('duskveil_session', JSON.stringify({username: currentUser.username, role: currentUser.role, coin: currentUser.coin}));
         ui.updateHeader();
         
@@ -690,7 +905,7 @@ var app = {
                 timestamp: new Date().toISOString()
             });
         }
-        saveCommands();
+        saveCommandsToLocal();
         
         purchases.unshift({
             id: Date.now(),
@@ -700,7 +915,7 @@ var app = {
             status: 'pending',
             timestamp: new Date().toISOString()
         });
-        savePurchases();
+        savePurchasesToLocal();
         
         showToast('✅ Rank ' + rankName + ' berhasil dibeli!', 'success');
         ui.updateAdminBadge();
@@ -726,7 +941,7 @@ var app = {
         var newCoin = (currentUser.coin || 0) - price;
         users[currentUser.username].coin = newCoin;
         currentUser.coin = newCoin;
-        saveUsers();
+        saveUsersToLocal();
         sessionStorage.setItem('duskveil_session', JSON.stringify({username: currentUser.username, role: currentUser.role, coin: currentUser.coin}));
         ui.updateHeader();
         
@@ -739,7 +954,7 @@ var app = {
             status: 'pending',
             timestamp: new Date().toISOString()
         });
-        saveCommands();
+        saveCommandsToLocal();
         
         purchases.unshift({
             id: Date.now(),
@@ -749,7 +964,7 @@ var app = {
             status: 'pending',
             timestamp: new Date().toISOString()
         });
-        savePurchases();
+        savePurchasesToLocal();
         
         showToast('✅ Skill ' + skillName + ' diupgrade ke level ' + level + '!', 'success');
         ui.updateAdminBadge();
@@ -768,7 +983,7 @@ var app = {
         var newCoin = (currentUser.coin || 0) - price;
         users[currentUser.username].coin = newCoin;
         currentUser.coin = newCoin;
-        saveUsers();
+        saveUsersToLocal();
         sessionStorage.setItem('duskveil_session', JSON.stringify({username: currentUser.username, role: currentUser.role, coin: currentUser.coin}));
         ui.updateHeader();
         
@@ -780,7 +995,7 @@ var app = {
             status: 'pending',
             timestamp: new Date().toISOString()
         });
-        saveCommands();
+        saveCommandsToLocal();
         
         purchases.unshift({
             id: Date.now(),
@@ -790,7 +1005,7 @@ var app = {
             status: 'pending',
             timestamp: new Date().toISOString()
         });
-        savePurchases();
+        savePurchasesToLocal();
         
         showToast('✅ Semua skill diset ke level ' + maxLevel + '!', 'success');
         ui.updateAdminBadge();
@@ -803,7 +1018,7 @@ var app = {
                 break;
             }
         }
-        saveCommands();
+        saveCommandsToLocal();
         ui.renderCommandTable();
         ui.updateAdminBadge();
         showToast('Command ditandai selesai!', 'success');
@@ -817,7 +1032,7 @@ var app = {
                 break;
             }
         }
-        saveCommands();
+        saveCommandsToLocal();
         ui.renderCommandTable();
         ui.updateAdminBadge();
         showToast('Command dihapus!', 'success');
@@ -840,7 +1055,7 @@ var app = {
         for(var j = 0; j < pending.length; j++) {
             pending[j].status = 'executed';
         }
-        saveCommands();
+        saveCommandsToLocal();
         
         showToast(pending.length + ' command sudah di-copy! Paste di console server.', 'success');
         ui.updateAdminBadge();
@@ -876,7 +1091,7 @@ var app = {
     clearAllCommands: function() {
         if (!confirm('Hapus SEMUA command?')) return;
         commands = [];
-        saveCommands();
+        saveCommandsToLocal();
         showToast('Semua command dihapus!', 'success');
         ui.updateAdminBadge();
         ui.renderCommandTable();
@@ -920,7 +1135,7 @@ var app = {
         }
         
         users[username].coin = parseInt(coinValue);
-        saveUsers();
+        saveUsersToLocal();
         showToast('✅ Koin ' + sanitize(username) + ' → ' + parseInt(coinValue).toLocaleString(), 'success');
         
         if (currentUser && currentUser.username === username) {
