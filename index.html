@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>DuskVeilSMP — Official Store</title>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
@@ -13,7 +13,7 @@
 
     <nav id="navbar" class="hidden">
         <div class="nav-inner">
-            <div class="logo" onclick="ui.showStorePanel()" style="cursor:pointer">
+            <div class="logo" onclick="ui.showStorePanel()">
                 <span class="logo-dusk">DUSK</span><span class="logo-veil">VEIL</span><span class="logo-smp">SMP</span>
             </div>
             <div class="nav-items">
@@ -29,10 +29,10 @@
                     <span>⌨</span> Commands
                     <span id="pending-badge" class="pending-badge" style="display:none">0</span>
                 </button>
-                <button id="nav-purchases-btn" class="btn-nav-cmd hidden" onclick="ui.showPurchasePanel()" style="background: linear-gradient(135deg, #059669, #10b981);">
+                <button id="nav-purchases-btn" class="btn-nav-cmd hidden" onclick="ui.showPurchasePanel()">
                     <span>📋</span> Riwayat
                 </button>
-                <button id="nav-admin-btn" class="btn-nav-cmd hidden" onclick="ui.showAdminPanel()" style="background: linear-gradient(135deg, #dc2626, #ef4444);">
+                <button id="nav-admin-btn" class="btn-nav-cmd hidden" onclick="ui.showAdminPanel()">
                     <span>🛡</span> Admin
                 </button>
                 <button class="btn-logout" onclick="app.logout()">
@@ -43,6 +43,7 @@
     </nav>
 
     <main>
+        <!-- AUTH SECTION -->
         <section id="auth-section" class="fade-in">
             <div class="auth-wrapper">
                 <div class="auth-deco-left"></div>
@@ -110,6 +111,7 @@
             </div>
         </section>
 
+        <!-- STORE SECTION -->
         <section id="store-section" class="hidden fade-in">
             <div class="store-inner">
                 <div id="admin-notice" class="admin-notice-bar hidden">
@@ -147,6 +149,7 @@
             </div>
         </section>
 
+        <!-- ADMIN DASHBOARD -->
         <section id="admin-dashboard" class="hidden fade-in">
             <div class="store-inner">
                 <div class="admin-dashboard-header">
@@ -178,7 +181,11 @@
                         <div class="control-group control-group--btn"><button class="btn-success" onclick="app.adminSetCoin()">SET KOIN</button></div>
                     </div>
                     <div class="table-wrapper">
-                        <table><thead><tr><th>Username</th><th>Role</th><th>Saldo Koin</th><th>Terdaftar</th><th>Aksi</th></tr></thead><tbody id="user-table-body"></tbody>}</div>
+                        <table>
+                            <thead><tr><th>Username</th><th>Role</th><th>Saldo Koin</th><th>Terdaftar</th><th>Aksi</th></tr></thead>
+                            <tbody id="user-table-body"></tbody>
+                        </table>
+                    </div>
                 </div>
                 <div class="panel-container">
                     <div class="panel-header"><div class="panel-header-left"><span class="panel-icon">🎮</span><div><h2>Monitor Server</h2><span class="panel-sub">Status server dan player online</span></div></div></div>
@@ -202,27 +209,44 @@
             </div>
         </section>
 
+        <!-- PURCHASE PANEL -->
         <section id="purchase-panel" class="hidden fade-in">
             <div class="store-inner">
                 <div class="panel-container">
                     <div class="panel-header"><div class="panel-header-left"><span class="panel-icon">📋</span><div><h2>Riwayat Pembelian</h2><span class="panel-sub">Semua transaksi yang telah dilakukan</span></div></div></div>
-                    <div class="table-wrapper"><table><thead><tr><th>Waktu</th><th>Username</th><th>Item</th><th>Harga</th><th>Status</th></tr></thead><tbody id="purchase-log-body"></tbody></table></div>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead><tr><th>Waktu</th><th>Username</th><th>Item</th><th>Harga</th><th>Status</th></tr></thead>
+                            <tbody id="purchase-log-body"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </section>
 
+        <!-- COMMAND PANEL -->
         <section id="command-panel" class="hidden fade-in">
             <div class="store-inner">
                 <div class="panel-container">
                     <div class="panel-header"><div class="panel-header-left"><span class="panel-icon">⌨</span><div><h2>Queue Command Server</h2><span class="panel-sub">Command yang menunggu untuk dieksekusi di server</span></div></div></div>
-                    <div class="table-wrapper"><table id="command-table"><thead><tr><th>Waktu</th><th>Command</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="command-table-body"></tbody></table></div>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead><tr><th>Waktu</th><th>Command</th><th>Status</th><th>Aksi</th></tr></thead>
+                            <tbody id="command-table-body"></tbody>
+                        </table>
+                    </div>
                     <div class="cmd-actions">
                         <button class="btn-primary btn-sm" onclick="app.executeAllCommands()">▶ Execute All Auto</button>
                         <button class="btn-secondary btn-sm" onclick="app.copyAllCommands()">📋 Copy All</button>
                         <button class="btn-secondary btn-sm" onclick="app.clearAllCommands()">🗑 Clear All</button>
                         <button class="btn-secondary btn-sm" onclick="app.exportCommands()">💾 Export JSON</button>
                     </div>
-                    <div class="info-box"><p>💡 <strong>Cara Execute Command:</strong></p><p>1️⃣ Klik <strong>"Execute All Auto"</strong> untuk mengirim otomatis ke server</p><p>2️⃣ Atau klik <strong>"Copy All"</strong> lalu paste di console server Minecraft</p></div>
+                    <div class="info-box">
+                        <p>💡 <strong>Cara Execute Command:</strong></p>
+                        <p>1️⃣ Klik <strong>"Execute All Auto"</strong> untuk mengirim otomatis ke server</p>
+                        <p>2️⃣ Atau klik <strong>"Copy All"</strong> lalu paste di console server Minecraft</p>
+                        <p>3️⃣ Klik "Mark Executed" setelah berhasil dijalankan</p>
+                    </div>
                 </div>
             </div>
         </section>
@@ -240,15 +264,5 @@
     <div id="toast-box"></div>
 
     <script src="script.js"></script>
-    <script>
-        // Initialize when page loads
-        document.addEventListener('DOMContentLoaded', function() {
-            if (typeof app !== 'undefined' && app.init) {
-                app.init();
-            } else {
-                console.error('App not loaded');
-            }
-        });
-    </script>
 </body>
 </html>
