@@ -1,5 +1,5 @@
 // ============================================
-// DuskVeilSMP - FIREBASE REALTIME (CSP Friendly)
+// DuskVeilSMP - FIREBASE REAL-TIME SYNC
 // ============================================
 
 // Firebase Config
@@ -19,14 +19,13 @@ let sessionsCollection = null;
 let commandsCollection = null;
 let purchasesCollection = null;
 let currentUser = null;
-let realtimeUnsubscribe = null;
+let unsubscribeListeners = [];
 
 // ============================================
-// INIT FIREBASE (Manual tanpa eval)
+// INIT FIREBASE
 // ============================================
 async function initFirebase() {
     return new Promise((resolve, reject) => {
-        // Load Firebase SDKs manually
         const firebaseAppScript = document.createElement('script');
         firebaseAppScript.src = 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
         firebaseAppScript.onload = () => {
@@ -61,14 +60,76 @@ function sanitize(str) {
     return String(str).replace(/[<>]/g, '');
 }
 
-function showToast(msg, type = 'success') {
+function showToast(msg, type) {
+    if (!type) type = 'success';
     const box = document.getElementById('toast-box');
     if (!box) return;
     const div = document.createElement('div');
-    div.className = `toast ${type}`;
-    div.innerHTML = `<span>${sanitize(msg)}</span><span style="cursor:pointer;margin-left:10px;" onclick="this.parentElement.remove()">✕</span>`;
+    div.className = 'toast ' + type;
+    div.innerHTML = '<span>' + sanitize(msg) + '</span><span style="cursor:pointer;margin-left:10px;" onclick="this.parentElement.remove()">✕</span>';
     box.appendChild(div);
     setTimeout(function() { if(div.parentElement) div.remove(); }, 3000);
+}
+
+// ============================================
+// REALTIME LISTENERS
+// ============================================
+function setupRealtimeListeners() {
+    // Unsubscribe existing listeners
+    for(var i = 0; i < unsubscribeListeners.length; i++) {
+        if(unsubscribeListeners[i]) unsubscribeListeners[i]();
+    }
+    unsubscribeListeners = [];
+    
+    if(!currentUser) return;
+    
+    // Listen to user's own coin changes (for member)
+    if(currentUser.role !== 'admin') {
+        var userUnsub = usersCollection.doc(currentUser.username).onSnapshot(function(doc) {
+            if(doc.exists) {
+                var newData = doc.data();
+                if(currentUser.coin !== newData.coin) {
+                    currentUser.coin = newData.coin;
+                    localStorage.setItem('duskveil_session', JSON.stringify(currentUser));
+                    ui.updateHeader();
+                    showToast('💰 Saldo diperbarui: ' + newData.coin.toLocaleString() + ' koin', 'info');
+                }
+            }
+        });
+        unsubscribeListeners.push(userUnsub);
+    }
+    
+    // Listen to users collection (for admin)
+    if(currentUser.role === 'admin') {
+        var usersUnsub = usersCollection.onSnapshot(function() {
+            ui.renderAdminTable();
+            ui.updateStats();
+        });
+        unsubscribeListeners.push(usersUnsub);
+        
+        var sessionsUnsub = sessionsCollection.onSnapshot(function() {
+            ui.renderOnlinePlayers();
+            ui.updateStats();
+        });
+        unsubscribeListeners.push(sessionsUnsub);
+        
+        var commandsUnsub = commandsCollection.onSnapshot(function() {
+            ui.updateAdminBadge();
+            if(!document.getElementById('command-panel')?.classList.contains('hidden')) {
+                ui.renderCommandTable();
+            }
+            ui.updateStats();
+        });
+        unsubscribeListeners.push(commandsUnsub);
+        
+        var purchasesUnsub = purchasesCollection.onSnapshot(function() {
+            if(!document.getElementById('purchase-panel')?.classList.contains('hidden')) {
+                ui.renderPurchaseLog();
+            }
+            ui.updateStats();
+        });
+        unsubscribeListeners.push(purchasesUnsub);
+    }
 }
 
 // ============================================
@@ -76,9 +137,9 @@ function showToast(msg, type = 'success') {
 // ============================================
 const ui = {
     switchTab: function(tab) {
-        const loginForm = document.getElementById('form-login');
-        const registerForm = document.getElementById('form-register');
-        const btns = document.querySelectorAll('.tab-btn');
+        var loginForm = document.getElementById('form-login');
+        var registerForm = document.getElementById('form-register');
+        var btns = document.querySelectorAll('.tab-btn');
         
         if (tab === 'login') {
             if(loginForm) loginForm.classList.remove('hidden');
@@ -94,34 +155,36 @@ const ui = {
     },
 
     showPage: function(page) {
-        const authSection = document.getElementById('auth-section');
-        const navbar = document.getElementById('navbar');
-        const storeSection = document.getElementById('store-section');
-        const adminDashboard = document.getElementById('admin-dashboard');
+        var authSection = document.getElementById('auth-section');
+        var navbar = document.getElementById('navbar');
+        var storeSection = document.getElementById('store-section');
+        var adminDashboard = document.getElementById('admin-dashboard');
         
         if (page === 'auth') {
             if(authSection) authSection.classList.remove('hidden');
             if(navbar) navbar.classList.add('hidden');
             if(storeSection) storeSection.classList.add('hidden');
             if(adminDashboard) adminDashboard.classList.add('hidden');
-            document.getElementById('command-panel')?.classList.add('hidden');
-            document.getElementById('purchase-panel')?.classList.add('hidden');
+            var cmdPanel = document.getElementById('command-panel');
+            var purchasePanel = document.getElementById('purchase-panel');
+            if(cmdPanel) cmdPanel.classList.add('hidden');
+            if(purchasePanel) purchasePanel.classList.add('hidden');
         } else {
             if(authSection) authSection.classList.add('hidden');
             if(navbar) navbar.classList.remove('hidden');
             
             if (currentUser) {
-                const isAdmin = currentUser.role === 'admin';
-                const adminNotice = document.getElementById('admin-notice');
+                var isAdmin = currentUser.role === 'admin';
+                var adminNotice = document.getElementById('admin-notice');
                 if(adminNotice) adminNotice.classList.toggle('hidden', !isAdmin);
                 
-                const commandsBtn = document.getElementById('nav-commands-btn');
+                var commandsBtn = document.getElementById('nav-commands-btn');
                 if(commandsBtn) commandsBtn.classList.toggle('hidden', !isAdmin);
                 
-                const purchasesBtn = document.getElementById('nav-purchases-btn');
+                var purchasesBtn = document.getElementById('nav-purchases-btn');
                 if(purchasesBtn) purchasesBtn.classList.toggle('hidden', !isAdmin);
                 
-                const adminBtn = document.getElementById('nav-admin-btn');
+                var adminBtn = document.getElementById('nav-admin-btn');
                 if(adminBtn) adminBtn.classList.toggle('hidden', !isAdmin);
                 
                 if (isAdmin) {
@@ -142,29 +205,31 @@ const ui = {
 
     updateHeader: function() {
         if (!currentUser) return;
-        const usernameEl = document.getElementById('nav-username');
-        const coinEl = document.getElementById('nav-coin');
-        const avatarEl = document.getElementById('nav-avatar');
+        var usernameEl = document.getElementById('nav-username');
+        var coinEl = document.getElementById('nav-coin');
+        var avatarEl = document.getElementById('nav-avatar');
         if(usernameEl) usernameEl.innerText = sanitize(currentUser.username);
         if(coinEl) coinEl.innerText = (currentUser.coin || 0).toLocaleString();
         if(avatarEl) avatarEl.innerText = currentUser.username.charAt(0).toUpperCase();
     },
 
     updateAdminBadge: async function() {
-        const badge = document.getElementById('pending-badge');
+        var badge = document.getElementById('pending-badge');
         if (!badge) return;
-        try {
-            const snapshot = await commandsCollection.where('status', '==', 'pending').get();
-            const count = snapshot.size;
-            badge.textContent = count;
-            badge.style.display = count > 0 ? 'inline-flex' : 'none';
-        } catch(e) {
-            console.error('Error:', e);
+        if(currentUser && currentUser.role === 'admin') {
+            try {
+                var snapshot = await commandsCollection.where('status', '==', 'pending').get();
+                var count = snapshot.size;
+                badge.textContent = count;
+                badge.style.display = count > 0 ? 'inline-flex' : 'none';
+            } catch(e) {
+                console.error('Error:', e);
+            }
         }
     },
 
     renderStore: function() {
-        const products = {
+        var products = {
             kontrak: [
                 { name: 'Basic Contract', price: 10000, cmd: 'basic' },
                 { name: 'Premium Contract', price: 35000, cmd: 'premium' },
@@ -184,10 +249,12 @@ const ui = {
             ]
         };
 
-        const kontrakGrid = document.getElementById('grid-kontrak');
+        var kontrakGrid = document.getElementById('grid-kontrak');
         if(kontrakGrid) {
-            kontrakGrid.innerHTML = products.kontrak.map(function(item) {
-                return '<div class="card">' +
+            kontrakGrid.innerHTML = '';
+            for(var i = 0; i < products.kontrak.length; i++) {
+                var item = products.kontrak[i];
+                kontrakGrid.innerHTML += '<div class="card">' +
                     '<div class="card-img">📜</div>' +
                     '<div class="card-content">' +
                     '<div class="card-title">' + item.name + '</div>' +
@@ -195,13 +262,15 @@ const ui = {
                     '<div class="card-price">' + item.price.toLocaleString() + ' 🪙</div>' +
                     '<button class="btn-buy" onclick="app.buyBook(\'' + item.name + '\', ' + item.price + ', \'' + item.cmd + '\')">BELI SEKARANG</button>' +
                     '</div></div>';
-            }).join('');
+            }
         }
 
-        const rankGrid = document.getElementById('grid-rank');
+        var rankGrid = document.getElementById('grid-rank');
         if(rankGrid) {
-            rankGrid.innerHTML = products.rank.map(function(item) {
-                return '<div class="card">' +
+            rankGrid.innerHTML = '';
+            for(var j = 0; j < products.rank.length; j++) {
+                var item = products.rank[j];
+                rankGrid.innerHTML += '<div class="card">' +
                     '<div class="card-img">👑</div>' +
                     '<div class="card-content">' +
                     '<div class="card-title">' + item.name + '</div>' +
@@ -209,14 +278,16 @@ const ui = {
                     '<div class="card-price">' + item.price.toLocaleString() + ' 🪙</div>' +
                     '<button class="btn-buy" onclick="app.buyRank(\'' + item.name + '\', ' + item.price + ', \'' + item.cmd + '\')">BELI SEKARANG</button>' +
                     '</div></div>';
-            }).join('');
+            }
         }
 
-        const skillGrid = document.getElementById('grid-skill');
+        var skillGrid = document.getElementById('grid-skill');
         if(skillGrid) {
-            skillGrid.innerHTML = products.skill.map(function(item) {
+            skillGrid.innerHTML = '';
+            for(var k = 0; k < products.skill.length; k++) {
+                var item = products.skill[k];
                 var onclickAttr = item.type === 'single' ? 'app.showSkillSelection(' + item.price + ')' : 'app.buyAllSkills(' + item.price + ')';
-                return '<div class="card">' +
+                skillGrid.innerHTML += '<div class="card">' +
                     '<div class="card-img">⚔️</div>' +
                     '<div class="card-content">' +
                     '<div class="card-title">' + item.name + '</div>' +
@@ -224,17 +295,17 @@ const ui = {
                     '<div class="card-price">' + item.price.toLocaleString() + ' 🪙</div>' +
                     '<button class="btn-buy" onclick="' + onclickAttr + '">BELI SEKARANG</button>' +
                     '</div></div>';
-            }).join('');
+            }
         }
     },
 
     renderAdminTable: async function() {
-        const tbody = document.getElementById('user-table-body');
+        var tbody = document.getElementById('user-table-body');
         if (!tbody) return;
         
         try {
-            const snapshot = await usersCollection.get();
-            const users = [];
+            var snapshot = await usersCollection.get();
+            var users = [];
             snapshot.forEach(function(doc) {
                 users.push(doc.data());
             });
@@ -244,15 +315,18 @@ const ui = {
                 return;
             }
             
-            tbody.innerHTML = users.map(function(u) {
-                return '<tr>' +
+            var html = '';
+            for(var i = 0; i < users.length; i++) {
+                var u = users[i];
+                html += '<tr>' +
                     '<td>' + sanitize(u.username) + '</td>' +
                     '<td><span class="status-badge ' + (u.role === 'admin' ? 'status-admin' : 'status-member') + '">' + u.role.toUpperCase() + '</span></td>' +
                     '<td style="color:var(--gold);">' + (u.coin || 0).toLocaleString() + '</td>' +
                     '<td>' + (u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '-') + '</td>' +
                     '<td><button class="btn-tbl-edit" onclick="app.fillAdmin(\'' + sanitize(u.username) + '\', ' + (u.coin || 0) + ')">Edit</button></td>' +
                     '</tr>';
-            }).join('');
+            }
+            tbody.innerHTML = html;
         } catch(e) {
             console.error('Error:', e);
             tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Error loading data</td></tr>';
@@ -261,20 +335,24 @@ const ui = {
 
     updateStats: async function() {
         try {
-            const usersSnapshot = await usersCollection.get();
-            const users = [];
-            usersSnapshot.forEach(function(doc) { users.push(doc.data()); });
-            const totalCoin = users.reduce(function(sum, u) { return sum + (u.coin || 0); }, 0);
+            var usersSnapshot = await usersCollection.get();
+            var totalCoin = 0;
+            var userCount = 0;
+            usersSnapshot.forEach(function(doc) {
+                var data = doc.data();
+                userCount++;
+                totalCoin += (data.coin || 0);
+            });
             
-            const purchasesSnapshot = await purchasesCollection.get();
-            const commandsSnapshot = await commandsCollection.where('status', '==', 'pending').get();
+            var purchasesSnapshot = await purchasesCollection.get();
+            var commandsSnapshot = await commandsCollection.where('status', '==', 'pending').get();
             
-            const totalUsersEl = document.getElementById('stat-total-users');
-            const totalCoinEl = document.getElementById('stat-total-coins');
-            const totalPurchasesEl = document.getElementById('stat-total-purchases');
-            const pendingCommandsEl = document.getElementById('stat-pending-commands');
+            var totalUsersEl = document.getElementById('stat-total-users');
+            var totalCoinEl = document.getElementById('stat-total-coins');
+            var totalPurchasesEl = document.getElementById('stat-total-purchases');
+            var pendingCommandsEl = document.getElementById('stat-pending-commands');
             
-            if(totalUsersEl) totalUsersEl.textContent = users.length;
+            if(totalUsersEl) totalUsersEl.textContent = userCount;
             if(totalCoinEl) totalCoinEl.textContent = totalCoin.toLocaleString();
             if(totalPurchasesEl) totalPurchasesEl.textContent = purchasesSnapshot.size;
             if(pendingCommandsEl) pendingCommandsEl.textContent = commandsSnapshot.size;
@@ -284,17 +362,17 @@ const ui = {
     },
 
     renderOnlinePlayers: async function() {
-        const container = document.getElementById('online-players-list');
-        const countEl = document.getElementById('online-count');
+        var container = document.getElementById('online-players-list');
+        var countEl = document.getElementById('online-count');
         if (!container) return;
         
         try {
-            const now = Date.now();
-            const cutoff = now - 30000;
-            const snapshot = await sessionsCollection.get();
-            const online = [];
+            var now = Date.now();
+            var cutoff = now - 30000;
+            var snapshot = await sessionsCollection.get();
+            var online = [];
             snapshot.forEach(function(doc) {
-                const data = doc.data();
+                var data = doc.data();
                 if(data.lastSeen > cutoff) {
                     online.push(data);
                 }
@@ -307,25 +385,28 @@ const ui = {
                 return;
             }
             
-            container.innerHTML = online.map(function(s) {
-                return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border);">' +
+            var html = '';
+            for(var i = 0; i < online.length; i++) {
+                var s = online[i];
+                html += '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border);">' +
                     '<span style="width:8px;height:8px;border-radius:50%;background:#10b981;"></span>' +
                     '<span style="flex:1;">' + sanitize(s.username) + '</span>' +
                     '<span style="font-size:0.75rem;color:var(--text3);">' + s.role + '</span>' +
                     '</div>';
-            }).join('');
+            }
+            container.innerHTML = html;
         } catch(e) {
             console.error('Error:', e);
         }
     },
 
     renderCommandTable: async function() {
-        const tbody = document.getElementById('command-table-body');
+        var tbody = document.getElementById('command-table-body');
         if (!tbody) return;
         
         try {
-            const snapshot = await commandsCollection.orderBy('timestamp', 'desc').limit(100).get();
-            const commands = [];
+            var snapshot = await commandsCollection.orderBy('timestamp', 'desc').limit(100).get();
+            var commands = [];
             snapshot.forEach(function(doc) {
                 commands.push({ id: doc.id, ...doc.data() });
             });
@@ -335,32 +416,35 @@ const ui = {
                 return;
             }
             
-            tbody.innerHTML = commands.map(function(cmd) {
+            var html = '';
+            for(var i = 0; i < commands.length; i++) {
+                var cmd = commands[i];
                 var statusClass = cmd.status === 'pending' ? 'status-pending' : 'status-executed';
                 var statusText = cmd.status === 'pending' ? '⏳ Pending' : '✅ Executed';
                 var actions = cmd.status === 'pending' 
                     ? '<button class="btn-execute" onclick="app.markExecuted(\'' + cmd.id + '\')">✓ Tandai Selesai</button>'
                     : '<button class="btn-copy" onclick="app.deleteCommand(\'' + cmd.id + '\')">🗑 Hapus</button>';
                 var timeStr = cmd.timestamp ? new Date(cmd.timestamp.toDate()).toLocaleString() : '-';
-                return '<tr>' +
+                html += '<tr>' +
                     '<td style="font-size:0.75rem;">' + timeStr + '</td>' +
                     '<td><code style="background:#1a1a2a;padding:4px 8px;border-radius:4px;">' + sanitize(cmd.command) + '</code><br><small>👤 ' + sanitize(cmd.username) + '</small></td>' +
                     '<td><span class="command-status ' + statusClass + '">' + statusText + '</span></td>' +
                     '<td>' + actions + '</td>' +
                     '</tr>';
-            }).join('');
+            }
+            tbody.innerHTML = html;
         } catch(e) {
             console.error('Error:', e);
         }
     },
 
     renderPurchaseLog: async function() {
-        const tbody = document.getElementById('purchase-log-body');
+        var tbody = document.getElementById('purchase-log-body');
         if (!tbody) return;
         
         try {
-            const snapshot = await purchasesCollection.orderBy('timestamp', 'desc').limit(50).get();
-            const purchases = [];
+            var snapshot = await purchasesCollection.orderBy('timestamp', 'desc').limit(50).get();
+            var purchases = [];
             snapshot.forEach(function(doc) {
                 purchases.push(doc.data());
             });
@@ -370,62 +454,81 @@ const ui = {
                 return;
             }
             
-            tbody.innerHTML = purchases.map(function(p) {
+            var html = '';
+            for(var i = 0; i < purchases.length; i++) {
+                var p = purchases[i];
                 var statusClass = p.status === 'pending' ? 'status-pending' : 'status-executed';
                 var statusText = p.status === 'pending' ? '⏳ Pending' : '✅ Selesai';
                 var timeStr = p.timestamp ? new Date(p.timestamp.toDate()).toLocaleString() : '-';
-                return '<tr>' +
+                html += '<tr>' +
                     '<td style="font-size:0.75rem;">' + timeStr + '</td>' +
                     '<td>' + sanitize(p.username) + '</td>' +
                     '<td>' + sanitize(p.itemName) + '</td>' +
                     '<td style="color:var(--gold);">' + (p.price || 0).toLocaleString() + ' 🪙</td>' +
                     '<td><span class="command-status ' + statusClass + '">' + statusText + '</span></td>' +
                     '</tr>';
-            }).join('');
+            }
+            tbody.innerHTML = html;
         } catch(e) {
             console.error('Error:', e);
         }
     },
 
     showCommandPanel: function() {
-        document.getElementById('store-section')?.classList.add('hidden');
-        document.getElementById('admin-dashboard')?.classList.add('hidden');
-        document.getElementById('purchase-panel')?.classList.add('hidden');
-        document.getElementById('command-panel')?.classList.remove('hidden');
+        var store = document.getElementById('store-section');
+        var admin = document.getElementById('admin-dashboard');
+        var purchase = document.getElementById('purchase-panel');
+        var command = document.getElementById('command-panel');
+        if(store) store.classList.add('hidden');
+        if(admin) admin.classList.add('hidden');
+        if(purchase) purchase.classList.add('hidden');
+        if(command) command.classList.remove('hidden');
         this.renderCommandTable();
     },
 
     showPurchasePanel: function() {
-        document.getElementById('store-section')?.classList.add('hidden');
-        document.getElementById('admin-dashboard')?.classList.add('hidden');
-        document.getElementById('command-panel')?.classList.add('hidden');
-        document.getElementById('purchase-panel')?.classList.remove('hidden');
+        var store = document.getElementById('store-section');
+        var admin = document.getElementById('admin-dashboard');
+        var command = document.getElementById('command-panel');
+        var purchase = document.getElementById('purchase-panel');
+        if(store) store.classList.add('hidden');
+        if(admin) admin.classList.add('hidden');
+        if(command) command.classList.add('hidden');
+        if(purchase) purchase.classList.remove('hidden');
         this.renderPurchaseLog();
     },
 
     showAdminPanel: function() {
-        document.getElementById('store-section')?.classList.add('hidden');
-        document.getElementById('command-panel')?.classList.add('hidden');
-        document.getElementById('purchase-panel')?.classList.add('hidden');
-        document.getElementById('admin-dashboard')?.classList.remove('hidden');
+        var store = document.getElementById('store-section');
+        var command = document.getElementById('command-panel');
+        var purchase = document.getElementById('purchase-panel');
+        var admin = document.getElementById('admin-dashboard');
+        if(store) store.classList.add('hidden');
+        if(command) command.classList.add('hidden');
+        if(purchase) purchase.classList.add('hidden');
+        if(admin) admin.classList.remove('hidden');
         this.renderAdminTable();
         this.updateStats();
         this.renderOnlinePlayers();
     },
 
     showStorePanel: function() {
-        document.getElementById('admin-dashboard')?.classList.add('hidden');
-        document.getElementById('command-panel')?.classList.add('hidden');
-        document.getElementById('purchase-panel')?.classList.add('hidden');
-        document.getElementById('store-section')?.classList.remove('hidden');
+        var admin = document.getElementById('admin-dashboard');
+        var command = document.getElementById('command-panel');
+        var purchase = document.getElementById('purchase-panel');
+        var store = document.getElementById('store-section');
+        if(admin) admin.classList.add('hidden');
+        if(command) command.classList.add('hidden');
+        if(purchase) purchase.classList.add('hidden');
+        if(store) store.classList.remove('hidden');
     },
 
     showSkillModal: function(price, callback) {
-        const modal = document.getElementById('skill-modal');
-        const container = document.getElementById('skill-list-container');
+        var modal = document.getElementById('skill-modal');
+        var container = document.getElementById('skill-list-container');
         if (!container) return;
         
-        const skillsList = [
+        var skillsList = [
             { name: 'Penambangan', id: 'mining' },
             { name: 'Pertanian', id: 'farming' },
             { name: 'Pertarungan', id: 'combat' },
@@ -464,14 +567,25 @@ const ui = {
 const app = {
     init: async function() {
         try {
-            // Hide loading overlay
             var overlay = document.getElementById('loading-overlay');
             if(overlay) overlay.style.display = 'none';
             
             await initFirebase();
+            
+            // Create default admin if not exists
+            var adminDoc = await usersCollection.doc('admin').get();
+            if(!adminDoc.exists) {
+                await usersCollection.doc('admin').set({
+                    username: 'admin',
+                    password: 'dusk@gnt3ng303#',
+                    role: 'admin',
+                    coin: 999999,
+                    createdAt: new Date().toISOString()
+                });
+            }
+            
             ui.renderStore();
             
-            // Check saved session
             var savedSession = localStorage.getItem('duskveil_session');
             if(savedSession) {
                 try {
@@ -485,6 +599,7 @@ const app = {
                             lastSeen: Date.now(),
                             loginAt: Date.now()
                         });
+                        setupRealtimeListeners();
                         ui.showPage('store');
                         ui.updateHeader();
                         ui.updateAdminBadge();
@@ -580,6 +695,7 @@ const app = {
                 loginAt: Date.now()
             });
             
+            setupRealtimeListeners();
             showToast('Selamat datang, ' + sanitize(username) + '!', 'success');
             ui.updateHeader();
             ui.showPage('store');
@@ -621,6 +737,10 @@ const app = {
         }
         if (password.length < 6) {
             showToast('Password minimal 6 karakter!', 'error');
+            return;
+        }
+        if(username === 'admin') {
+            showToast('Username tidak tersedia!', 'error');
             return;
         }
         
@@ -668,6 +788,10 @@ const app = {
                 await sessionsCollection.doc(currentUser.username).delete();
             } catch(e) {}
         }
+        for(var i = 0; i < unsubscribeListeners.length; i++) {
+            if(unsubscribeListeners[i]) unsubscribeListeners[i]();
+        }
+        unsubscribeListeners = [];
         currentUser = null;
         localStorage.removeItem('duskveil_session');
         ui.showPage('auth');
@@ -703,7 +827,6 @@ const app = {
             });
             
             showToast('✅ ' + itemName + ' berhasil dibeli!', 'success');
-            ui.updateAdminBadge();
         } catch(err) {
             showToast('Gagal: ' + err.message, 'error');
         }
@@ -747,7 +870,6 @@ const app = {
             });
             
             showToast('✅ Rank ' + rankName + ' berhasil dibeli!', 'success');
-            ui.updateAdminBadge();
         } catch(err) {
             showToast('Gagal: ' + err.message, 'error');
         }
@@ -795,7 +917,6 @@ const app = {
             });
             
             showToast('✅ Skill ' + skillName + ' diupgrade ke level ' + level + '!', 'success');
-            ui.updateAdminBadge();
         } catch(err) {
             showToast('Gagal: ' + err.message, 'error');
         }
@@ -835,7 +956,6 @@ const app = {
             });
             
             showToast('✅ Semua skill diset ke level ' + maxLevel + '!', 'success');
-            ui.updateAdminBadge();
         } catch(err) {
             showToast('Gagal: ' + err.message, 'error');
         }
@@ -845,7 +965,6 @@ const app = {
         try {
             await commandsCollection.doc(id).update({ status: 'executed' });
             ui.renderCommandTable();
-            ui.updateAdminBadge();
             showToast('Command ditandai selesai!', 'success');
         } catch(err) {
             showToast('Gagal: ' + err.message, 'error');
@@ -857,7 +976,6 @@ const app = {
         try {
             await commandsCollection.doc(id).delete();
             ui.renderCommandTable();
-            ui.updateAdminBadge();
             showToast('Command dihapus!', 'success');
         } catch(err) {
             showToast('Gagal: ' + err.message, 'error');
@@ -888,7 +1006,6 @@ const app = {
             }
             
             showToast(commands.length + ' command sudah di-copy! Paste di console server.', 'success');
-            ui.updateAdminBadge();
             ui.renderCommandTable();
         } catch(err) {
             showToast('Gagal: ' + err.message, 'error');
@@ -948,7 +1065,6 @@ const app = {
             });
             await batch.commit();
             showToast('Semua command dihapus!', 'success');
-            ui.updateAdminBadge();
             ui.renderCommandTable();
         } catch(err) {
             showToast('Gagal: ' + err.message, 'error');
@@ -1011,7 +1127,7 @@ const app = {
             }
             
             await usersCollection.doc(username).update({ coin: parseInt(coinValue) });
-            showToast('Koin ' + sanitize(username) + ' → ' + parseInt(coinValue).toLocaleString(), 'success');
+            showToast('✅ Koin ' + sanitize(username) + ' → ' + parseInt(coinValue).toLocaleString(), 'success');
             
             if(currentUser && currentUser.username === username) {
                 currentUser.coin = parseInt(coinValue);
