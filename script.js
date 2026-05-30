@@ -10,8 +10,7 @@ const firebaseConfig = {
     projectId: "duskveilsmp",
     storageBucket: "duskveilsmp.firebasestorage.app",
     messagingSenderId: "797107010544",
-    appId: "1:797107010544:web:6b5401cdb0cf045c0dbb35",
-    measurementId: "G-ZC06WZXWP9"
+    appId: "1:797107010544:web:6b5401cdb0cf045c0dbb35"
 };
 
 const firebaseApp = initializeApp(firebaseConfig);
@@ -36,7 +35,7 @@ const SKILLS_LIST = [
 ];
 
 // ============================================
-// SIMPLE FUNCTIONS
+// HELPER FUNCTIONS
 // ============================================
 function sanitize(str) {
     if (!str) return '';
@@ -50,7 +49,7 @@ function showToast(msg, type = 'success') {
     div.className = `toast ${type}`;
     div.innerHTML = `<span>${sanitize(msg)}</span><span style="cursor:pointer;margin-left:10px;" onclick="this.parentElement.remove()">✕</span>`;
     box.appendChild(div);
-    setTimeout(() => div.remove(), 4000);
+    setTimeout(() => div.remove(), 3000);
 }
 
 // ============================================
@@ -70,22 +69,6 @@ const DB = {
     async getAllUsers() {
         const snap = await getDocs(collection(db, 'users'));
         return snap.docs.map(d => d.data());
-    },
-    async setSession(username, role) {
-        await setDoc(doc(db, 'sessions', username), {
-            username, role, lastSeen: Date.now(), loginAt: Date.now()
-        });
-    },
-    async removeSession(username) {
-        try { await deleteDoc(doc(db, 'sessions', username)); } catch(e) {}
-    },
-    async heartbeat(username) {
-        try { await updateDoc(doc(db, 'sessions', username), { lastSeen: Date.now() }); } catch(e) {}
-    },
-    async getOnlineSessions() {
-        const snap = await getDocs(collection(db, 'sessions'));
-        const cutoff = Date.now() - 30000;
-        return snap.docs.map(d => d.data()).filter(s => s.lastSeen > cutoff);
     },
     async addPurchase(data) {
         await addDoc(collection(db, 'purchases'), { ...data, timestamp: serverTimestamp() });
@@ -151,14 +134,16 @@ const ui = {
         const navbar = document.getElementById('navbar');
         const storeSection = document.getElementById('store-section');
         const adminDashboard = document.getElementById('admin-dashboard');
+        const commandPanel = document.getElementById('command-panel');
+        const purchasePanel = document.getElementById('purchase-panel');
         
         if (page === 'auth') {
             if (authSection) authSection.classList.remove('hidden');
             if (navbar) navbar.classList.add('hidden');
             if (storeSection) storeSection.classList.add('hidden');
             if (adminDashboard) adminDashboard.classList.add('hidden');
-            document.getElementById('command-panel')?.classList.add('hidden');
-            document.getElementById('purchase-panel')?.classList.add('hidden');
+            if (commandPanel) commandPanel.classList.add('hidden');
+            if (purchasePanel) purchasePanel.classList.add('hidden');
         } else {
             if (authSection) authSection.classList.add('hidden');
             if (navbar) navbar.classList.remove('hidden');
@@ -185,16 +170,13 @@ const ui = {
                     if (storeSection) storeSection.classList.add('hidden');
                     this.renderAdminTable();
                     this.updateStats();
-                    this.renderOnlinePlayers();
                 } else {
                     if (storeSection) storeSection.classList.remove('hidden');
                     if (adminDashboard) adminDashboard.classList.add('hidden');
                 }
-            } else {
-                if (storeSection) storeSection.classList.remove('hidden');
-                if (adminDashboard) adminDashboard.classList.add('hidden');
+                this.updateHeader();
+                this.updateAdminBadge();
             }
-            this.updateHeader();
         }
     },
 
@@ -208,16 +190,19 @@ const ui = {
         if (usernameEl) usernameEl.innerText = sanitize(user.username);
         if (coinEl) coinEl.innerText = (user.coin || 0).toLocaleString();
         if (avatarEl) avatarEl.innerText = user.username.charAt(0).toUpperCase();
-        this.updateAdminBadge();
     },
 
     async updateAdminBadge() {
         const badge = document.getElementById('pending-badge');
         if (!badge) return;
-        const pending = await DB.getPendingCommands();
-        const count = pending.length;
-        badge.textContent = count;
-        badge.style.display = count > 0 ? 'inline-flex' : 'none';
+        try {
+            const pending = await DB.getPendingCommands();
+            const count = pending.length;
+            badge.textContent = count;
+            badge.style.display = count > 0 ? 'inline-flex' : 'none';
+        } catch(e) {
+            console.error('Error updating badge:', e);
+        }
     },
 
     renderStore() {
@@ -290,56 +275,99 @@ const ui = {
     async renderAdminTable() {
         const tbody = document.getElementById('user-table-body');
         if (!tbody) return;
-        const users = await DB.getAllUsers();
-        if (users.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Belum ada member</td></tr>';
-            return;
+        try {
+            const users = await DB.getAllUsers();
+            if (users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Belum ada member</td></tr>';
+                return;
+            }
+            tbody.innerHTML = users.map(u => `
+                <tr>
+                    <td>${sanitize(u.username)}</td>
+                    <td><span class="status-badge ${u.role === 'admin' ? 'status-admin' : 'status-member'}">${u.role.toUpperCase()}</span></td>
+                    <td style="color:var(--gold);">${(u.coin || 0).toLocaleString()}</td>
+                    <td>${u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '-'}</td>
+                    <td><button class="btn-tbl-edit" onclick="app.fillAdmin('${sanitize(u.username)}', ${u.coin || 0})">Edit</button></td>
+                </tr>
+            `).join('');
+        } catch(e) {
+            console.error('Error rendering admin table:', e);
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Error loading data</td></tr>';
         }
-        tbody.innerHTML = users.map(u => `
-            <tr>
-                <td>${sanitize(u.username)}</td>
-                <td><span class="status-badge ${u.role === 'admin' ? 'status-admin' : 'status-member'}">${u.role.toUpperCase()}</span></td>
-                <td style="color:var(--gold);">${(u.coin || 0).toLocaleString()}</td>
-                <td>${u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '-'}</td>
-                <td><button class="btn-tbl-edit" onclick="app.fillAdmin('${sanitize(u.username)}', ${u.coin || 0})">Edit</button></td>
-            </tr>
-        `).join('');
-    },
-
-    async renderOnlinePlayers() {
-        const container = document.getElementById('online-players-list');
-        const countEl = document.getElementById('online-count');
-        if (!container) return;
-        const online = await DB.getOnlineSessions();
-        if (countEl) countEl.textContent = online.length;
-        if (online.length === 0) {
-            container.innerHTML = '<div style="color:var(--text3);padding:8px 0;">Tidak ada user online</div>';
-            return;
-        }
-        container.innerHTML = online.map(s => `
-            <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border);">
-                <span style="width:8px;height:8px;border-radius:50%;background:#10b981;"></span>
-                <span style="flex:1;">${sanitize(s.username)}</span>
-                <span style="font-size:0.75rem;color:var(--text3);">${s.role}</span>
-            </div>
-        `).join('');
     },
 
     async updateStats() {
-        const users = await DB.getAllUsers();
-        const totalCoin = users.reduce((sum, u) => sum + (u.coin || 0), 0);
-        const purchases = await DB.getPurchases(999);
-        const pending = await DB.getPendingCommands();
-        
-        const totalUsersEl = document.getElementById('stat-total-users');
-        const totalCoinEl = document.getElementById('stat-total-coins');
-        const totalPurchasesEl = document.getElementById('stat-total-purchases');
-        const pendingCommandsEl = document.getElementById('stat-pending-commands');
-        
-        if (totalUsersEl) totalUsersEl.textContent = users.length;
-        if (totalCoinEl) totalCoinEl.textContent = totalCoin.toLocaleString();
-        if (totalPurchasesEl) totalPurchasesEl.textContent = purchases.length;
-        if (pendingCommandsEl) pendingCommandsEl.textContent = pending.length;
+        try {
+            const users = await DB.getAllUsers();
+            const totalCoin = users.reduce((sum, u) => sum + (u.coin || 0), 0);
+            const purchases = await DB.getPurchases(999);
+            const pending = await DB.getPendingCommands();
+            
+            const totalUsersEl = document.getElementById('stat-total-users');
+            const totalCoinEl = document.getElementById('stat-total-coins');
+            const totalPurchasesEl = document.getElementById('stat-total-purchases');
+            const pendingCommandsEl = document.getElementById('stat-pending-commands');
+            
+            if (totalUsersEl) totalUsersEl.textContent = users.length;
+            if (totalCoinEl) totalCoinEl.textContent = totalCoin.toLocaleString();
+            if (totalPurchasesEl) totalPurchasesEl.textContent = purchases.length;
+            if (pendingCommandsEl) pendingCommandsEl.textContent = pending.length;
+        } catch(e) {
+            console.error('Error updating stats:', e);
+        }
+    },
+
+    async renderCommandTable() {
+        const tbody = document.getElementById('command-table-body');
+        if (!tbody) return;
+        try {
+            const commands = await DB.getCommands();
+            if (commands.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Tidak ada command</td></tr>';
+                return;
+            }
+            tbody.innerHTML = commands.map(cmd => {
+                const statusClass = cmd.status === 'pending' ? 'status-pending' : 'status-executed';
+                const statusText = cmd.status === 'pending' ? '⏳ Pending' : '✅ Executed';
+                return `
+                    <tr>
+                        <td style="font-size:0.75rem;">${cmd.timestamp?.toDate ? cmd.timestamp.toDate().toLocaleString() : '-'}</td>
+                        <td><code style="background:#1a1a2a;padding:4px 8px;border-radius:4px;">${sanitize(cmd.command)}</code><br><small>👤 ${sanitize(cmd.username)}</small></td>
+                        <td><span class="command-status ${statusClass}">${statusText}</span></td>
+                        <td>${cmd.status === 'pending' ? `<button class="btn-execute" onclick="app.markExecuted('${cmd.id}')">✓ Tandai Selesai</button>` : `<button class="btn-copy" onclick="app.deleteCommand('${cmd.id}')">🗑 Hapus</button>`}</td>
+                    </tr>
+                `;
+            }).join('');
+        } catch(e) {
+            console.error('Error rendering command table:', e);
+        }
+    },
+
+    async renderPurchaseLog() {
+        const tbody = document.getElementById('purchase-log-body');
+        if (!tbody) return;
+        try {
+            const purchases = await DB.getPurchases(50);
+            if (purchases.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Belum ada pembelian</td></tr>';
+                return;
+            }
+            tbody.innerHTML = purchases.map(p => {
+                const statusClass = p.status === 'pending' ? 'status-pending' : 'status-executed';
+                const statusText = p.status === 'pending' ? '⏳ Pending' : '✅ Selesai';
+                return `
+                    <tr>
+                        <td style="font-size:0.75rem;">${p.timestamp?.toDate ? p.timestamp.toDate().toLocaleString() : '-'}</td>
+                        <td>${sanitize(p.username)}</td>
+                        <td>${sanitize(p.itemName)}</td>
+                        <td style="color:var(--gold);">${(p.price || 0).toLocaleString()} 🪙</td>
+                        <td><span class="command-status ${statusClass}">${statusText}</span></td>
+                    </tr>
+                `;
+            }).join('');
+        } catch(e) {
+            console.error('Error rendering purchase log:', e);
+        }
     },
 
     showSkillModal(price, callback) {
@@ -363,6 +391,38 @@ const ui = {
     closeSkillModal() {
         const modal = document.getElementById('skill-modal');
         if (modal) modal.classList.add('hidden');
+    },
+
+    showCommandPanel() {
+        document.getElementById('store-section')?.classList.add('hidden');
+        document.getElementById('admin-dashboard')?.classList.add('hidden');
+        document.getElementById('purchase-panel')?.classList.add('hidden');
+        document.getElementById('command-panel')?.classList.remove('hidden');
+        this.renderCommandTable();
+    },
+
+    showPurchasePanel() {
+        document.getElementById('store-section')?.classList.add('hidden');
+        document.getElementById('admin-dashboard')?.classList.add('hidden');
+        document.getElementById('command-panel')?.classList.add('hidden');
+        document.getElementById('purchase-panel')?.classList.remove('hidden');
+        this.renderPurchaseLog();
+    },
+
+    showAdminPanel() {
+        document.getElementById('store-section')?.classList.add('hidden');
+        document.getElementById('command-panel')?.classList.add('hidden');
+        document.getElementById('purchase-panel')?.classList.add('hidden');
+        document.getElementById('admin-dashboard')?.classList.remove('hidden');
+        this.renderAdminTable();
+        this.updateStats();
+    },
+
+    showStorePanel() {
+        document.getElementById('admin-dashboard')?.classList.add('hidden');
+        document.getElementById('command-panel')?.classList.add('hidden');
+        document.getElementById('purchase-panel')?.classList.add('hidden');
+        document.getElementById('store-section')?.classList.remove('hidden');
     }
 };
 
@@ -391,14 +451,18 @@ const app = {
             // Check existing session
             const session = sessionStorage.getItem('duskveil_session');
             if (session) {
-                const user = JSON.parse(session);
-                const dbUser = await DB.getUser(user.username);
-                if (dbUser) {
-                    await DB.setSession(user.username, dbUser.role);
-                    ui.showPage('store');
-                    ui.updateHeader();
-                    this.startHeartbeat(user.username);
-                } else {
+                try {
+                    const user = JSON.parse(session);
+                    const dbUser = await DB.getUser(user.username);
+                    if (dbUser) {
+                        ui.showPage('store');
+                        ui.updateHeader();
+                        ui.updateAdminBadge();
+                    } else {
+                        sessionStorage.removeItem('duskveil_session');
+                        ui.showPage('auth');
+                    }
+                } catch(e) {
                     sessionStorage.removeItem('duskveil_session');
                     ui.showPage('auth');
                 }
@@ -407,18 +471,8 @@ const app = {
             }
         } catch (err) {
             console.error('Init error:', err);
-            ui.toast('Error: ' + err.message, 'error');
             ui.showPage('auth');
         }
-    },
-
-    startHeartbeat(username) {
-        setInterval(async () => {
-            const session = sessionStorage.getItem('duskveil_session');
-            if (session) {
-                await DB.heartbeat(username);
-            }
-        }, 10000);
     },
 
     async handleLogin(e) {
@@ -457,12 +511,11 @@ const app = {
                 loginAt: new Date().toISOString()
             };
             sessionStorage.setItem('duskveil_session', JSON.stringify(sessionData));
-            await DB.setSession(username, user.role);
             
             ui.toast(`Selamat datang, ${sanitize(username)}!`, 'success');
             ui.updateHeader();
             ui.showPage('store');
-            this.startHeartbeat(username);
+            ui.updateAdminBadge();
             
             // Clear form
             document.getElementById('login-user').value = '';
@@ -544,12 +597,7 @@ const app = {
         }
     },
 
-    async logout() {
-        const session = sessionStorage.getItem('duskveil_session');
-        if (session) {
-            const user = JSON.parse(session);
-            await DB.removeSession(user.username);
-        }
+    logout() {
         sessionStorage.removeItem('duskveil_session');
         ui.showPage('auth');
         ui.toast('Anda telah keluar.');
@@ -585,7 +633,7 @@ const app = {
             status: 'pending'
         });
         
-        ui.toast(`✅ ${itemName} berhasil dibeli! Command masuk antrian.`, 'success');
+        ui.toast(`✅ ${itemName} berhasil dibeli!`, 'success');
         ui.updateAdminBadge();
     },
 
@@ -623,7 +671,7 @@ const app = {
             status: 'pending'
         });
         
-        ui.toast(`✅ Rank ${rankName} berhasil dibeli! Command masuk antrian.`, 'success');
+        ui.toast(`✅ Rank ${rankName} berhasil dibeli!`, 'success');
         ui.updateAdminBadge();
     },
 
@@ -702,6 +750,21 @@ const app = {
         ui.updateAdminBadge();
     },
 
+    async markExecuted(id) {
+        await DB.updateCommand(id, { status: 'executed' });
+        ui.renderCommandTable();
+        ui.updateAdminBadge();
+        ui.toast('Command ditandai selesai!', 'success');
+    },
+
+    async deleteCommand(id) {
+        if (!confirm('Hapus command ini?')) return;
+        await DB.deleteCommand(id);
+        ui.renderCommandTable();
+        ui.updateAdminBadge();
+        ui.toast('Command dihapus!', 'success');
+    },
+
     async executeAllCommands() {
         const pending = await DB.getPendingCommands();
         if (pending.length === 0) {
@@ -719,7 +782,7 @@ const app = {
         
         ui.toast(`${pending.length} command sudah di-copy! Paste di console server.`, 'success');
         ui.updateAdminBadge();
-        ui.renderAdminTable();
+        ui.renderCommandTable();
     },
 
     async copyAllCommands() {
@@ -751,6 +814,7 @@ const app = {
         await DB.clearCommands();
         ui.toast('Semua command dihapus!', 'success');
         ui.updateAdminBadge();
+        ui.renderCommandTable();
     },
 
     async exportAllData() {
@@ -817,4 +881,4 @@ window.app = app;
 window.ui = ui;
 
 // Start app
-window.addEventListener('DOMContentLoaded', () => app.init());
+document.addEventListener('DOMContentLoaded', () => app.init());
