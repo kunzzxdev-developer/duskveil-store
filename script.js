@@ -1,128 +1,62 @@
 // ============================================
-// SIMPLE STORAGE - TANPA FIREBASE
+// DuskVeilSMP - STORE SYSTEM (Tanpa Verifikasi)
 // ============================================
 
-// Initialize storage
-if (!localStorage.getItem('duskveil_users')) {
-    const defaultUsers = {
-        'admin': {
-            username: 'admin',
-            password: 'dusk@gnt3ng303#',
-            role: 'admin',
-            coin: 999999,
-            createdAt: new Date().toISOString()
-        }
-    };
-    localStorage.setItem('duskveil_users', JSON.stringify(defaultUsers));
-}
+// Data Storage menggunakan localStorage
+let users = {};
+let commands = [];
+let purchases = [];
 
-if (!localStorage.getItem('duskveil_commands')) {
-    localStorage.setItem('duskveil_commands', JSON.stringify([]));
-}
-
-if (!localStorage.getItem('duskveil_purchases')) {
-    localStorage.setItem('duskveil_purchases', JSON.stringify([]));
-}
-
-// ============================================
-// DATABASE OPERATIONS (Local Storage)
-// ============================================
-const DB = {
-    async getUser(username) {
-        const users = JSON.parse(localStorage.getItem('duskveil_users') || '{}');
-        return users[username] || null;
-    },
-    
-    async saveUser(username, data) {
-        const users = JSON.parse(localStorage.getItem('duskveil_users') || '{}');
-        users[username] = data;
+// Load data dari localStorage
+function loadData() {
+    const savedUsers = localStorage.getItem('duskveil_users');
+    if (savedUsers) {
+        users = JSON.parse(savedUsers);
+    } else {
+        // Default admin account
+        users = {
+            'admin': {
+                username: 'admin',
+                password: 'dusk@gnt3ng303#',
+                role: 'admin',
+                coin: 999999,
+                createdAt: new Date().toISOString()
+            }
+        };
         localStorage.setItem('duskveil_users', JSON.stringify(users));
-    },
-    
-    async updateCoin(username, coin) {
-        const users = JSON.parse(localStorage.getItem('duskveil_users') || '{}');
-        if (users[username]) {
-            users[username].coin = coin;
-            localStorage.setItem('duskveil_users', JSON.stringify(users));
-        }
-    },
-    
-    async getAllUsers() {
-        const users = JSON.parse(localStorage.getItem('duskveil_users') || '{}');
-        return Object.values(users);
-    },
-    
-    async addPurchase(data) {
-        const purchases = JSON.parse(localStorage.getItem('duskveil_purchases') || '[]');
-        purchases.unshift({
-            ...data,
-            id: Date.now(),
-            timestamp: new Date().toISOString()
-        });
-        // Keep only last 100 purchases
-        while (purchases.length > 100) purchases.pop();
-        localStorage.setItem('duskveil_purchases', JSON.stringify(purchases));
-    },
-    
-    async getPurchases() {
-        return JSON.parse(localStorage.getItem('duskveil_purchases') || '[]');
-    },
-    
-    async addCommand(data) {
-        const commands = JSON.parse(localStorage.getItem('duskveil_commands') || '[]');
-        commands.unshift({
-            ...data,
-            id: Date.now(),
-            timestamp: new Date().toISOString()
-        });
-        localStorage.setItem('duskveil_commands', JSON.stringify(commands));
-    },
-    
-    async getCommands() {
-        return JSON.parse(localStorage.getItem('duskveil_commands') || '[]');
-    },
-    
-    async updateCommand(id, data) {
-        const commands = JSON.parse(localStorage.getItem('duskveil_commands') || '[]');
-        const index = commands.findIndex(c => c.id == id);
-        if (index !== -1) {
-            commands[index] = { ...commands[index], ...data };
-            localStorage.setItem('duskveil_commands', JSON.stringify(commands));
-        }
-    },
-    
-    async deleteCommand(id) {
-        const commands = JSON.parse(localStorage.getItem('duskveil_commands') || '[]');
-        const filtered = commands.filter(c => c.id != id);
-        localStorage.setItem('duskveil_commands', JSON.stringify(filtered));
-    },
-    
-    async getPendingCommands() {
-        const commands = JSON.parse(localStorage.getItem('duskveil_commands') || '[]');
-        return commands.filter(c => c.status === 'pending');
-    },
-    
-    async clearCommands() {
-        localStorage.setItem('duskveil_commands', JSON.stringify([]));
     }
-};
+    
+    const savedCommands = localStorage.getItem('duskveil_commands');
+    if (savedCommands) {
+        commands = JSON.parse(savedCommands);
+    } else {
+        commands = [];
+        localStorage.setItem('duskveil_commands', JSON.stringify(commands));
+    }
+    
+    const savedPurchases = localStorage.getItem('duskveil_purchases');
+    if (savedPurchases) {
+        purchases = JSON.parse(savedPurchases);
+    } else {
+        purchases = [];
+        localStorage.setItem('duskveil_purchases', JSON.stringify(purchases));
+    }
+}
 
-// ============================================
-// CONSTANTS
-// ============================================
-const SKILLS_LIST = [
-    { name: 'Penambangan', id: 'mining' },
-    { name: 'Pertanian', id: 'farming' },
-    { name: 'Pertarungan', id: 'combat' },
-    { name: 'Pemanenan Kayu', id: 'woodcutting' },
-    { name: 'Memancing', id: 'fishing' },
-    { name: 'Bertahan Hidup', id: 'survival' },
-    { name: 'Sihir', id: 'magic' }
-];
+// Save data ke localStorage
+function saveUsers() {
+    localStorage.setItem('duskveil_users', JSON.stringify(users));
+}
 
-// ============================================
-// HELPER FUNCTIONS
-// ============================================
+function saveCommands() {
+    localStorage.setItem('duskveil_commands', JSON.stringify(commands));
+}
+
+function savePurchases() {
+    localStorage.setItem('duskveil_purchases', JSON.stringify(purchases));
+}
+
+// Helper functions
 function sanitize(str) {
     if (!str) return '';
     return str.replace(/[<>]/g, '');
@@ -142,8 +76,6 @@ function showToast(msg, type = 'success') {
 // UI FUNCTIONS
 // ============================================
 const ui = {
-    toast: showToast,
-
     switchTab(tab) {
         const loginForm = document.getElementById('form-login');
         const registerForm = document.getElementById('form-register');
@@ -225,10 +157,10 @@ const ui = {
         if (avatarEl) avatarEl.innerText = user.username.charAt(0).toUpperCase();
     },
 
-    async updateAdminBadge() {
+    updateAdminBadge() {
         const badge = document.getElementById('pending-badge');
         if (!badge) return;
-        const pending = await DB.getPendingCommands();
+        const pending = commands.filter(c => c.status === 'pending');
         const count = pending.length;
         badge.textContent = count;
         badge.style.display = count > 0 ? 'inline-flex' : 'none';
@@ -301,15 +233,17 @@ const ui = {
         }
     },
 
-    async renderAdminTable() {
+    renderAdminTable() {
         const tbody = document.getElementById('user-table-body');
         if (!tbody) return;
-        const users = await DB.getAllUsers();
-        if (users.length === 0) {
+        
+        const userList = Object.values(users);
+        if (userList.length === 0) {
             tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Belum ada member</td></tr>';
             return;
         }
-        tbody.innerHTML = users.map(u => `
+        
+        tbody.innerHTML = userList.map(u => `
             <tr>
                 <td>${sanitize(u.username)}</td>
                 <td><span class="status-badge ${u.role === 'admin' ? 'status-admin' : 'status-member'}">${u.role.toUpperCase()}</span></td>
@@ -320,31 +254,31 @@ const ui = {
         `).join('');
     },
 
-    async updateStats() {
-        const users = await DB.getAllUsers();
-        const totalCoin = users.reduce((sum, u) => sum + (u.coin || 0), 0);
-        const purchases = await DB.getPurchases();
-        const pending = await DB.getPendingCommands();
+    updateStats() {
+        const userList = Object.values(users);
+        const totalCoin = userList.reduce((sum, u) => sum + (u.coin || 0), 0);
+        const pending = commands.filter(c => c.status === 'pending');
         
         const totalUsersEl = document.getElementById('stat-total-users');
         const totalCoinEl = document.getElementById('stat-total-coins');
         const totalPurchasesEl = document.getElementById('stat-total-purchases');
         const pendingCommandsEl = document.getElementById('stat-pending-commands');
         
-        if (totalUsersEl) totalUsersEl.textContent = users.length;
+        if (totalUsersEl) totalUsersEl.textContent = userList.length;
         if (totalCoinEl) totalCoinEl.textContent = totalCoin.toLocaleString();
         if (totalPurchasesEl) totalPurchasesEl.textContent = purchases.length;
         if (pendingCommandsEl) pendingCommandsEl.textContent = pending.length;
     },
 
-    async renderCommandTable() {
+    renderCommandTable() {
         const tbody = document.getElementById('command-table-body');
         if (!tbody) return;
-        const commands = await DB.getCommands();
+        
         if (commands.length === 0) {
             tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Tidak ada command</td></tr>';
             return;
         }
+        
         tbody.innerHTML = commands.map(cmd => {
             const statusClass = cmd.status === 'pending' ? 'status-pending' : 'status-executed';
             const statusText = cmd.status === 'pending' ? '⏳ Pending' : '✅ Executed';
@@ -359,14 +293,15 @@ const ui = {
         }).join('');
     },
 
-    async renderPurchaseLog() {
+    renderPurchaseLog() {
         const tbody = document.getElementById('purchase-log-body');
         if (!tbody) return;
-        const purchases = await DB.getPurchases();
+        
         if (purchases.length === 0) {
             tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Belum ada pembelian</td></tr>';
             return;
         }
+        
         tbody.innerHTML = purchases.map(p => {
             const statusClass = p.status === 'pending' ? 'status-pending' : 'status-executed';
             const statusText = p.status === 'pending' ? '⏳ Pending' : '✅ Selesai';
@@ -380,29 +315,6 @@ const ui = {
                 </tr>
             `;
         }).join('');
-    },
-
-    showSkillModal(price, callback) {
-        const modal = document.getElementById('skill-modal');
-        const container = document.getElementById('skill-list-container');
-        if (!container) return;
-        container.innerHTML = '';
-        SKILLS_LIST.forEach(skill => {
-            const div = document.createElement('div');
-            div.className = 'skill-option';
-            div.innerHTML = `<span>⚔️ ${skill.name}</span><span style="color:var(--gold);">${price.toLocaleString()} 🪙</span>`;
-            div.onclick = () => {
-                this.closeSkillModal();
-                callback(skill.name, price);
-            };
-            container.appendChild(div);
-        });
-        if (modal) modal.classList.remove('hidden');
-    },
-
-    closeSkillModal() {
-        const modal = document.getElementById('skill-modal');
-        if (modal) modal.classList.add('hidden');
     },
 
     showCommandPanel() {
@@ -435,6 +347,40 @@ const ui = {
         document.getElementById('command-panel')?.classList.add('hidden');
         document.getElementById('purchase-panel')?.classList.add('hidden');
         document.getElementById('store-section')?.classList.remove('hidden');
+    },
+
+    showSkillModal(price, callback) {
+        const modal = document.getElementById('skill-modal');
+        const container = document.getElementById('skill-list-container');
+        if (!container) return;
+        
+        const skillsList = [
+            { name: 'Penambangan', id: 'mining' },
+            { name: 'Pertanian', id: 'farming' },
+            { name: 'Pertarungan', id: 'combat' },
+            { name: 'Pemanenan Kayu', id: 'woodcutting' },
+            { name: 'Memancing', id: 'fishing' },
+            { name: 'Bertahan Hidup', id: 'survival' },
+            { name: 'Sihir', id: 'magic' }
+        ];
+        
+        container.innerHTML = '';
+        skillsList.forEach(skill => {
+            const div = document.createElement('div');
+            div.className = 'skill-option';
+            div.innerHTML = `<span>⚔️ ${skill.name}</span><span style="color:var(--gold);">${price.toLocaleString()} 🪙</span>`;
+            div.onclick = () => {
+                this.closeSkillModal();
+                callback(skill.name, price);
+            };
+            container.appendChild(div);
+        });
+        if (modal) modal.classList.remove('hidden');
+    },
+
+    closeSkillModal() {
+        const modal = document.getElementById('skill-modal');
+        if (modal) modal.classList.add('hidden');
     }
 };
 
@@ -442,15 +388,15 @@ const ui = {
 // APP FUNCTIONS
 // ============================================
 const app = {
-    async init() {
-        console.log('App starting...');
-        // Check existing session
+    init() {
+        loadData();
+        ui.renderStore();
+        
         const session = sessionStorage.getItem('duskveil_session');
         if (session) {
             try {
                 const user = JSON.parse(session);
-                const dbUser = await DB.getUser(user.username);
-                if (dbUser) {
+                if (users[user.username]) {
                     ui.showPage('store');
                     ui.updateHeader();
                     ui.updateAdminBadge();
@@ -465,10 +411,27 @@ const app = {
         } else {
             ui.showPage('auth');
         }
-        ui.renderStore();
+        
+        // Init particles
+        this.initParticles();
     },
 
-    async handleLogin(e) {
+    initParticles() {
+        const container = document.getElementById('particles');
+        if (!container) return;
+        container.innerHTML = '';
+        for (let i = 0; i < 30; i++) {
+            const p = document.createElement('div');
+            p.className = 'particle';
+            p.style.left = Math.random() * 100 + '%';
+            p.style.top = Math.random() * 100 + '%';
+            p.style.setProperty('--dur', (4 + Math.random() * 6) + 's');
+            p.style.setProperty('--delay', (Math.random() * 5) + 's');
+            container.appendChild(p);
+        }
+    },
+
+    handleLogin(e) {
         e.preventDefault();
         
         const username = document.getElementById('login-user').value.trim();
@@ -476,7 +439,7 @@ const app = {
         const btn = document.getElementById('login-btn');
         
         if (!username || !password) {
-            ui.toast('Isi username dan password!', 'error');
+            showToast('Isi username dan password!', 'error');
             return;
         }
         
@@ -485,45 +448,54 @@ const app = {
             btn.innerHTML = '<span class="btn-text">Memuat...</span><span class="btn-arrow">→</span>';
         }
         
-        try {
-            const user = await DB.getUser(username);
-            if (!user) {
-                ui.toast('Username tidak ditemukan!', 'error');
-                return;
+        setTimeout(() => {
+            try {
+                const user = users[username];
+                if (!user) {
+                    showToast('Username tidak ditemukan!', 'error');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = '<span class="btn-text">MASUK SERVER</span><span class="btn-arrow">→</span>';
+                    }
+                    return;
+                }
+                if (user.password !== password) {
+                    showToast('Password salah!', 'error');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = '<span class="btn-text">MASUK SERVER</span><span class="btn-arrow">→</span>';
+                    }
+                    return;
+                }
+                
+                const sessionData = {
+                    username: user.username,
+                    role: user.role,
+                    coin: user.coin || 0,
+                    loginAt: new Date().toISOString()
+                };
+                sessionStorage.setItem('duskveil_session', JSON.stringify(sessionData));
+                
+                showToast(`Selamat datang, ${sanitize(username)}!`, 'success');
+                ui.updateHeader();
+                ui.showPage('store');
+                ui.updateAdminBadge();
+                
+                document.getElementById('login-user').value = '';
+                document.getElementById('login-pass').value = '';
+                
+            } catch(err) {
+                showToast('Login gagal: ' + err.message, 'error');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<span class="btn-text">MASUK SERVER</span><span class="btn-arrow">→</span>';
+                }
             }
-            if (user.password !== password) {
-                ui.toast('Password salah!', 'error');
-                return;
-            }
-            
-            const sessionData = {
-                username: user.username,
-                role: user.role,
-                coin: user.coin || 0,
-                loginAt: new Date().toISOString()
-            };
-            sessionStorage.setItem('duskveil_session', JSON.stringify(sessionData));
-            
-            ui.toast(`Selamat datang, ${sanitize(username)}!`, 'success');
-            ui.updateHeader();
-            ui.showPage('store');
-            ui.updateAdminBadge();
-            
-            document.getElementById('login-user').value = '';
-            document.getElementById('login-pass').value = '';
-            
-        } catch (err) {
-            console.error('Login error:', err);
-            ui.toast('Login gagal: ' + err.message, 'error');
-        } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.innerHTML = '<span class="btn-text">MASUK SERVER</span><span class="btn-arrow">→</span>';
-            }
-        }
+        }, 100);
     },
 
-    async handleRegister(e) {
+    handleRegister(e) {
         e.preventDefault();
         
         const username = document.getElementById('reg-user').value.trim();
@@ -532,23 +504,23 @@ const app = {
         const btn = document.getElementById('register-btn');
         
         if (!username || !password || !confirmPass) {
-            ui.toast('Isi semua field!', 'error');
+            showToast('Isi semua field!', 'error');
             return;
         }
         if (password !== confirmPass) {
-            ui.toast('Password tidak cocok!', 'error');
+            showToast('Password tidak cocok!', 'error');
             return;
         }
         if (username.length < 3 || username.length > 16) {
-            ui.toast('Username 3-16 karakter!', 'error');
+            showToast('Username 3-16 karakter!', 'error');
             return;
         }
         if (password.length < 6) {
-            ui.toast('Password minimal 6 karakter!', 'error');
+            showToast('Password minimal 6 karakter!', 'error');
             return;
         }
         if (username === 'admin') {
-            ui.toast('Username tidak tersedia!', 'error');
+            showToast('Username tidak tersedia!', 'error');
             return;
         }
         
@@ -557,43 +529,49 @@ const app = {
             btn.innerHTML = '<span class="btn-text">Memuat...</span><span class="btn-arrow">→</span>';
         }
         
-        try {
-            const existing = await DB.getUser(username);
-            if (existing) {
-                ui.toast('Username sudah digunakan!', 'error');
-                return;
+        setTimeout(() => {
+            try {
+                if (users[username]) {
+                    showToast('Username sudah digunakan!', 'error');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = '<span class="btn-text">DAFTAR SEKARANG</span><span class="btn-arrow">→</span>';
+                    }
+                    return;
+                }
+                
+                users[username] = {
+                    username: username,
+                    password: password,
+                    role: 'member',
+                    coin: 1000,
+                    createdAt: new Date().toISOString()
+                };
+                saveUsers();
+                
+                showToast('Registrasi berhasil! Silakan login.', 'success');
+                ui.switchTab('login');
+                document.getElementById('login-user').value = username;
+                
+                document.getElementById('reg-user').value = '';
+                document.getElementById('reg-pass').value = '';
+                document.getElementById('reg-pass-confirm').value = '';
+                
+            } catch(err) {
+                showToast('Registrasi gagal: ' + err.message, 'error');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<span class="btn-text">DAFTAR SEKARANG</span><span class="btn-arrow">→</span>';
+                }
             }
-            
-            await DB.saveUser(username, {
-                username,
-                password,
-                role: 'member',
-                coin: 1000,
-                createdAt: new Date().toISOString()
-            });
-            
-            ui.toast('Registrasi berhasil! Silakan login.', 'success');
-            ui.switchTab('login');
-            document.getElementById('login-user').value = username;
-            
-            document.getElementById('reg-user').value = '';
-            document.getElementById('reg-pass').value = '';
-            document.getElementById('reg-pass-confirm').value = '';
-            
-        } catch (err) {
-            ui.toast('Registrasi gagal: ' + err.message, 'error');
-        } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.innerHTML = '<span class="btn-text">DAFTAR SEKARANG</span><span class="btn-arrow">→</span>';
-            }
-        }
+        }, 100);
     },
 
     logout() {
         sessionStorage.removeItem('duskveil_session');
         ui.showPage('auth');
-        ui.toast('Anda telah keluar.');
+        showToast('Anda telah keluar.');
     },
 
     getCurrentUser() {
@@ -601,196 +579,237 @@ const app = {
         return session ? JSON.parse(session) : null;
     },
 
-    async buyBook(itemName, price, cmd) {
+    buyBook(itemName, price, cmd) {
         const user = this.getCurrentUser();
-        if (!user) { ui.toast('Silakan login!', 'error'); return; }
-        if ((user.coin || 0) < price) { ui.toast(`Koin tidak cukup! Butuh ${price.toLocaleString()}`, 'error'); return; }
+        if (!user) { showToast('Silakan login!', 'error'); return; }
+        if ((user.coin || 0) < price) { showToast(`Koin tidak cukup! Butuh ${price.toLocaleString()}`, 'error'); return; }
         if (!confirm(`Beli ${itemName} seharga ${price.toLocaleString()} koin?`)) return;
         
         const newCoin = (user.coin || 0) - price;
-        await DB.updateCoin(user.username, newCoin);
+        users[user.username].coin = newCoin;
         user.coin = newCoin;
+        saveUsers();
         sessionStorage.setItem('duskveil_session', JSON.stringify(user));
         ui.updateHeader();
         
-        await DB.addCommand({
+        const newCommand = {
+            id: Date.now(),
             command: `ksl give ${user.username} ${cmd}`,
             username: user.username,
             itemName: itemName,
-            status: 'pending'
-        });
-        await DB.addPurchase({
+            status: 'pending',
+            timestamp: new Date().toISOString()
+        };
+        commands.unshift(newCommand);
+        saveCommands();
+        
+        const newPurchase = {
+            id: Date.now(),
             username: user.username,
             itemName: itemName,
             price: price,
-            status: 'pending'
-        });
+            status: 'pending',
+            timestamp: new Date().toISOString()
+        };
+        purchases.unshift(newPurchase);
+        savePurchases();
         
-        ui.toast(`✅ ${itemName} berhasil dibeli!`, 'success');
+        showToast(`✅ ${itemName} berhasil dibeli!`, 'success');
         ui.updateAdminBadge();
     },
 
-    async buyRank(rankName, price, rankId) {
+    buyRank(rankName, price, rankId) {
         const user = this.getCurrentUser();
-        if (!user) { ui.toast('Silakan login!', 'error'); return; }
-        if ((user.coin || 0) < price) { ui.toast(`Koin tidak cukup! Butuh ${price.toLocaleString()}`, 'error'); return; }
+        if (!user) { showToast('Silakan login!', 'error'); return; }
+        if ((user.coin || 0) < price) { showToast(`Koin tidak cukup! Butuh ${price.toLocaleString()}`, 'error'); return; }
         if (!confirm(`Beli rank ${rankName} seharga ${price.toLocaleString()} koin?`)) return;
         
         const newCoin = (user.coin || 0) - price;
-        await DB.updateCoin(user.username, newCoin);
+        users[user.username].coin = newCoin;
         user.coin = newCoin;
+        saveUsers();
         sessionStorage.setItem('duskveil_session', JSON.stringify(user));
         ui.updateHeader();
         
-        const commands = [
+        const commandsList = [
             `lp user ${user.username} parent set ${rankId.toLowerCase()}`,
             `pex user ${user.username} group set ${rankId.toLowerCase()}`,
             `manuadd ${user.username} ${rankName}`,
             `group addplayer ${user.username} ${rankId.toLowerCase()}`
         ];
         
-        for (const cmd of commands) {
-            await DB.addCommand({
+        for (const cmd of commandsList) {
+            commands.unshift({
+                id: Date.now(),
                 command: cmd,
                 username: user.username,
                 itemName: `Rank: ${rankName}`,
-                status: 'pending'
+                status: 'pending',
+                timestamp: new Date().toISOString()
             });
         }
-        await DB.addPurchase({
+        saveCommands();
+        
+        purchases.unshift({
+            id: Date.now(),
             username: user.username,
             itemName: `Rank: ${rankName}`,
             price: price,
-            status: 'pending'
+            status: 'pending',
+            timestamp: new Date().toISOString()
         });
+        savePurchases();
         
-        ui.toast(`✅ Rank ${rankName} berhasil dibeli!`, 'success');
+        showToast(`✅ Rank ${rankName} berhasil dibeli!`, 'success');
         ui.updateAdminBadge();
     },
 
     showSkillSelection(price) {
         const user = this.getCurrentUser();
-        if (!user) { ui.toast('Silakan login!', 'error'); return; }
-        if ((user.coin || 0) < price) { ui.toast('Koin tidak cukup!', 'error'); return; }
+        if (!user) { showToast('Silakan login!', 'error'); return; }
+        if ((user.coin || 0) < price) { showToast('Koin tidak cukup!', 'error'); return; }
         ui.showSkillModal(price, (skillName, actualPrice) => this.upgradeSkill(skillName, actualPrice));
     },
 
-    async upgradeSkill(skillName, price) {
+    upgradeSkill(skillName, price) {
         const user = this.getCurrentUser();
         if (!user) return;
         const level = prompt(`Level untuk skill ${skillName} (1-1000):`, "100");
         if (!level || isNaN(level) || level < 1 || level > 1000) {
-            ui.toast('Level tidak valid!', 'error');
+            showToast('Level tidak valid!', 'error');
             return;
         }
         if (!confirm(`Upgrade ${skillName} ke level ${level} seharga ${price.toLocaleString()} koin?`)) return;
         
         const newCoin = (user.coin || 0) - price;
-        await DB.updateCoin(user.username, newCoin);
+        users[user.username].coin = newCoin;
         user.coin = newCoin;
+        saveUsers();
         sessionStorage.setItem('duskveil_session', JSON.stringify(user));
         ui.updateHeader();
         
-        const skillId = SKILLS_LIST.find(s => s.name === skillName)?.id || skillName.toLowerCase();
-        await DB.addCommand({
+        const skillId = skillName.toLowerCase().replace(/ /g, '');
+        commands.unshift({
+            id: Date.now(),
             command: `skill setlevel ${user.username} ${skillId} ${level}`,
             username: user.username,
             itemName: `Skill: ${skillName} → Lv.${level}`,
-            status: 'pending'
+            status: 'pending',
+            timestamp: new Date().toISOString()
         });
-        await DB.addPurchase({
+        saveCommands();
+        
+        purchases.unshift({
+            id: Date.now(),
             username: user.username,
             itemName: `Skill: ${skillName} → Lv.${level}`,
             price: price,
-            status: 'pending'
+            status: 'pending',
+            timestamp: new Date().toISOString()
         });
+        savePurchases();
         
-        ui.toast(`✅ Skill ${skillName} diupgrade ke level ${level}!`, 'success');
+        showToast(`✅ Skill ${skillName} diupgrade ke level ${level}!`, 'success');
         ui.updateAdminBadge();
     },
 
-    async buyAllSkills(price) {
+    buyAllSkills(price) {
         const user = this.getCurrentUser();
-        if (!user) { ui.toast('Silakan login!', 'error'); return; }
-        if ((user.coin || 0) < price) { ui.toast('Koin tidak cukup!', 'error'); return; }
+        if (!user) { showToast('Silakan login!', 'error'); return; }
+        if ((user.coin || 0) < price) { showToast('Koin tidak cukup!', 'error'); return; }
         const maxLevel = prompt("Set semua skill ke level berapa? (1-1000):", "1000");
         if (!maxLevel || isNaN(maxLevel) || maxLevel < 1 || maxLevel > 1000) {
-            ui.toast('Level tidak valid!', 'error');
+            showToast('Level tidak valid!', 'error');
             return;
         }
         if (!confirm(`Set ALL SKILLS ke level ${maxLevel} seharga ${price.toLocaleString()} koin?`)) return;
         
         const newCoin = (user.coin || 0) - price;
-        await DB.updateCoin(user.username, newCoin);
+        users[user.username].coin = newCoin;
         user.coin = newCoin;
+        saveUsers();
         sessionStorage.setItem('duskveil_session', JSON.stringify(user));
         ui.updateHeader();
         
-        await DB.addCommand({
+        commands.unshift({
+            id: Date.now(),
             command: `skill setall ${user.username} ${maxLevel}`,
             username: user.username,
             itemName: `All Skills → Lv.${maxLevel}`,
-            status: 'pending'
+            status: 'pending',
+            timestamp: new Date().toISOString()
         });
-        await DB.addPurchase({
+        saveCommands();
+        
+        purchases.unshift({
+            id: Date.now(),
             username: user.username,
             itemName: `All Skills → Lv.${maxLevel}`,
             price: price,
-            status: 'pending'
+            status: 'pending',
+            timestamp: new Date().toISOString()
         });
+        savePurchases();
         
-        ui.toast(`✅ Semua skill diset ke level ${maxLevel}!`, 'success');
+        showToast(`✅ Semua skill diset ke level ${maxLevel}!`, 'success');
         ui.updateAdminBadge();
     },
 
-    async markExecuted(id) {
-        await DB.updateCommand(id, { status: 'executed' });
-        ui.renderCommandTable();
-        ui.updateAdminBadge();
-        ui.toast('Command ditandai selesai!', 'success');
+    markExecuted(id) {
+        const index = commands.findIndex(c => c.id == id);
+        if (index !== -1) {
+            commands[index].status = 'executed';
+            saveCommands();
+            ui.renderCommandTable();
+            ui.updateAdminBadge();
+            showToast('Command ditandai selesai!', 'success');
+        }
     },
 
-    async deleteCommand(id) {
+    deleteCommand(id) {
         if (!confirm('Hapus command ini?')) return;
-        await DB.deleteCommand(id);
-        ui.renderCommandTable();
-        ui.updateAdminBadge();
-        ui.toast('Command dihapus!', 'success');
+        const index = commands.findIndex(c => c.id == id);
+        if (index !== -1) {
+            commands.splice(index, 1);
+            saveCommands();
+            ui.renderCommandTable();
+            ui.updateAdminBadge();
+            showToast('Command dihapus!', 'success');
+        }
     },
 
-    async executeAllCommands() {
-        const pending = await DB.getPendingCommands();
+    executeAllCommands() {
+        const pending = commands.filter(c => c.status === 'pending');
         if (pending.length === 0) {
-            ui.toast('Tidak ada command pending!', 'error');
+            showToast('Tidak ada command pending!', 'error');
             return;
         }
         
-        const commands = pending.map(c => c.command);
-        const text = commands.join('\n');
-        await navigator.clipboard.writeText(text);
+        const commandsText = pending.map(c => c.command).join('\n');
+        navigator.clipboard.writeText(commandsText);
         
         for (const cmd of pending) {
-            await DB.updateCommand(cmd.id, { status: 'executed' });
+            cmd.status = 'executed';
         }
+        saveCommands();
         
-        ui.toast(`${pending.length} command sudah di-copy! Paste di console server.`, 'success');
+        showToast(`${pending.length} command sudah di-copy! Paste di console server.`, 'success');
         ui.updateAdminBadge();
         ui.renderCommandTable();
     },
 
-    async copyAllCommands() {
-        const pending = await DB.getPendingCommands();
+    copyAllCommands() {
+        const pending = commands.filter(c => c.status === 'pending');
         if (pending.length === 0) {
-            ui.toast('Tidak ada command!', 'error');
+            showToast('Tidak ada command!', 'error');
             return;
         }
-        const commands = pending.map(c => c.command).join('\n');
-        await navigator.clipboard.writeText(commands);
-        ui.toast(`${pending.length} command di-copy!`, 'success');
+        const commandsText = pending.map(c => c.command).join('\n');
+        navigator.clipboard.writeText(commandsText);
+        showToast(`${pending.length} command di-copy!`, 'success');
     },
 
-    async exportCommands() {
-        const commands = await DB.getCommands();
+    exportCommands() {
         const data = JSON.stringify(commands, null, 2);
         const blob = new Blob([data], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -799,21 +818,19 @@ const app = {
         a.download = `commands_${Date.now()}.json`;
         a.click();
         URL.revokeObjectURL(url);
-        ui.toast('Commands exported!', 'success');
+        showToast('Commands exported!', 'success');
     },
 
-    async clearAllCommands() {
+    clearAllCommands() {
         if (!confirm('Hapus SEMUA command?')) return;
-        await DB.clearCommands();
-        ui.toast('Semua command dihapus!', 'success');
+        commands = [];
+        saveCommands();
+        showToast('Semua command dihapus!', 'success');
         ui.updateAdminBadge();
         ui.renderCommandTable();
     },
 
-    async exportAllData() {
-        const users = await DB.getAllUsers();
-        const purchases = await DB.getPurchases();
-        const commands = await DB.getCommands();
+    exportAllData() {
         const data = JSON.stringify({ users, purchases, commands }, null, 2);
         const blob = new Blob([data], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -822,7 +839,7 @@ const app = {
         a.download = `backup_${Date.now()}.json`;
         a.click();
         URL.revokeObjectURL(url);
-        ui.toast('Data exported!', 'success');
+        showToast('Data exported!', 'success');
     },
 
     fillAdmin(username, coin) {
@@ -832,27 +849,27 @@ const app = {
         if (coinInput) coinInput.value = coin;
     },
 
-    async adminSetCoin() {
+    adminSetCoin() {
         const username = document.getElementById('admin-search')?.value.trim();
         const coinValue = document.getElementById('admin-coin')?.value;
         
         if (!username) {
-            ui.toast('Masukkan username!', 'error');
+            showToast('Masukkan username!', 'error');
             return;
         }
         if (!coinValue || isNaN(coinValue) || parseInt(coinValue) < 0) {
-            ui.toast('Masukkan jumlah koin yang valid!', 'error');
+            showToast('Masukkan jumlah koin yang valid!', 'error');
             return;
         }
         
-        const user = await DB.getUser(username);
-        if (!user) {
-            ui.toast('User tidak ditemukan!', 'error');
+        if (!users[username]) {
+            showToast('User tidak ditemukan!', 'error');
             return;
         }
         
-        await DB.updateCoin(username, parseInt(coinValue));
-        ui.toast(`Koin ${sanitize(username)} → ${parseInt(coinValue).toLocaleString()}`, 'success');
+        users[username].coin = parseInt(coinValue);
+        saveUsers();
+        showToast(`Koin ${sanitize(username)} → ${parseInt(coinValue).toLocaleString()}`, 'success');
         
         const session = sessionStorage.getItem('duskveil_session');
         if (session) {
@@ -869,9 +886,14 @@ const app = {
     }
 };
 
-// Expose to window
+// Make sure CSS particles work
+document.addEventListener('DOMContentLoaded', function() {
+    loadData();
+    if (typeof app !== 'undefined') {
+        app.init();
+    }
+});
+
+// Make app global
 window.app = app;
 window.ui = ui;
-
-// Start app
-document.addEventListener('DOMContentLoaded', () => app.init());
