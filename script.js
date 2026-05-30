@@ -18,13 +18,13 @@ const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 
 // ============================================
-// ANTI DEVTOOLS
+// ANTI DEVTOOLS (opsional, bisa diaktifkan kembali)
 // ============================================
 (function() {
-    // Disable klik kanan
-    document.addEventListener('contextmenu', e => e.preventDefault());
+    // Disable klik kanan (opsional, bisa dihapus)
+    // document.addEventListener('contextmenu', e => e.preventDefault());
     
-    // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U saja
+    // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U (opsional)
     document.addEventListener('keydown', e => {
         if (
             e.key === 'F12' ||
@@ -37,7 +37,6 @@ const db = getFirestore(firebaseApp);
     });
 })();
 
-
 // ============================================
 // CONSTANTS
 // ============================================
@@ -47,7 +46,7 @@ const API_CONFIG = {
     panelUrl: 'https://panel.arqonara.com'
 };
 
-// Password di-encode, jangan diubah
+// Password di-encode
 const _a = atob('YWRtaW4='); // admin
 const _b = atob('ZHVza2dAbnQzbmczMDMj'); // pw
 const ADMIN_CONFIG = { username: _a, password: _b };
@@ -63,10 +62,9 @@ const SKILLS_LIST = [
 ];
 
 // ============================================
-// FIREBASE DB — pengganti localStorage
+// FIREBASE DB
 // ============================================
 const FirebaseDB = {
-    // USERS
     async getUser(username) {
         const snap = await getDoc(doc(db, 'users', username));
         return snap.exists() ? snap.data() : null;
@@ -80,6 +78,9 @@ const FirebaseDB = {
     },
     async updateCoin(username, coin) {
         await updateDoc(doc(db, 'users', username), { coin });
+    },
+    async setUserRole(username, role) {
+        await updateDoc(doc(db, 'users', username), { role });
     },
 
     // SESSIONS (online tracking)
@@ -150,28 +151,23 @@ const RealtimeSync = {
         this.stopAll();
 
         if (role === 'admin') {
-            // Listen users
             this.unsubs.push(onSnapshot(collection(db, 'users'), () => {
                 ui.renderAdminTable();
                 ui.updateStats();
             }));
-            // Listen sessions (online players)
             this.unsubs.push(onSnapshot(collection(db, 'sessions'), () => {
                 ui.renderOnlinePlayers();
                 ui.updateStats();
             }));
-            // Listen commands
             this.unsubs.push(onSnapshot(collection(db, 'commands'), () => {
                 ui.updateAdminBadge();
                 if (!document.getElementById('command-panel')?.classList.contains('hidden')) ui.renderCommandTable();
             }));
-            // Listen purchases
             this.unsubs.push(onSnapshot(collection(db, 'purchases'), () => {
                 if (!document.getElementById('purchase-panel')?.classList.contains('hidden')) ui.renderPurchaseLog();
                 ui.updateStats();
             }));
         } else {
-            // Member: listen coin update
             this.unsubs.push(onSnapshot(doc(db, 'users', username), (snap) => {
                 if (!snap.exists()) return;
                 const fresh = snap.data();
@@ -187,7 +183,6 @@ const RealtimeSync = {
             }));
         }
 
-        // Heartbeat
         setInterval(() => {
             const s = sessionStorage.getItem('duskveil_session');
             if (s) FirebaseDB.heartbeat(JSON.parse(s).username);
@@ -224,60 +219,6 @@ const Security = {
     },
     generateToken() {
         return Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2,'0')).join('');
-    }
-};
-
-// ============================================
-// TURNSTILE
-// ============================================
-const TurnstileManager = {
-    widgetId: null,
-    siteKey: '0x4AAAAAADWhIT5hFjEKoRvwiD6Re9f3S74',
-
-    render(tab) {
-        this.remove();
-        const id = tab === 'login' ? 'turnstile-login' : 'turnstile-register';
-        const container = document.getElementById(id);
-        if (!container) return;
-        container.innerHTML = '';
-        if (window.turnstile && typeof window.turnstile.render === 'function') {
-            try {
-                this.widgetId = window.turnstile.render(container, {
-                    sitekey: this.siteKey,
-                    callback: (token) => { app.turnstileToken = token; },
-                    'error-callback': () => { app.turnstileToken = null; this._showFallback(container); },
-                    'expired-callback': () => { app.turnstileToken = null; },
-                    theme: 'dark', size: 'normal'
-                });
-            } catch(e) { this._showFallback(container); }
-        } else {
-            container.innerHTML = '<div style="color:var(--text3);font-size:0.78rem;text-align:center;padding:12px;">⏳ Memuat verifikasi...</div>';
-            setTimeout(() => this.render(tab), 2000);
-        }
-    },
-    _showFallback(container) {
-        const a = Math.floor(Math.random()*10)+1, b = Math.floor(Math.random()*10)+1;
-        container.innerHTML = `<div style="color:var(--text3);font-size:0.85rem;text-align:center;padding:12px;border:1px dashed var(--border);border-radius:8px;">
-            <p style="margin-bottom:8px;">🔒 Verifikasi Manual</p>
-            <p style="font-size:1.2rem;color:var(--text);margin-bottom:8px;">${a} + ${b} = ?</p>
-            <input type="number" id="fallback-captcha" placeholder="Jawaban" style="width:100px;text-align:center;padding:6px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);">
-            <button onclick="TurnstileManager._checkFallback(${a+b})" style="margin-left:8px;padding:6px 12px;background:var(--primary);border:none;border-radius:6px;color:white;cursor:pointer;">OK</button>
-        </div>`;
-    },
-    _checkFallback(ans) {
-        const input = document.getElementById('fallback-captcha');
-        if (input && parseInt(input.value) === ans) {
-            app.turnstileToken = 'fallback_' + Date.now();
-            input.closest('[id^="turnstile-"]').innerHTML = '<div style="color:var(--success);text-align:center;padding:12px;">✅ Berhasil!</div>';
-        } else { ui.toast('Jawaban salah!', 'error'); }
-    },
-    remove() {
-        if (this.widgetId && window.turnstile) { try { window.turnstile.remove(this.widgetId); } catch(e) {} this.widgetId = null; }
-        app.turnstileToken = null;
-    },
-    reset() {
-        if (this.widgetId && window.turnstile) { try { window.turnstile.reset(this.widgetId); } catch(e) {} }
-        app.turnstileToken = null;
     }
 };
 
@@ -374,9 +315,17 @@ const ui = {
         const lf = document.getElementById('form-login');
         const rf = document.getElementById('form-register');
         const btns = document.querySelectorAll('.tab-btn');
-        if (tab === 'login') { lf.classList.remove('hidden'); rf.classList.add('hidden'); btns[0].classList.add('active'); btns[1].classList.remove('active'); }
-        else { lf.classList.add('hidden'); rf.classList.remove('hidden'); btns[0].classList.remove('active'); btns[1].classList.add('active'); }
-        TurnstileManager.render(tab);
+        if (tab === 'login') { 
+            lf.classList.remove('hidden'); 
+            rf.classList.add('hidden'); 
+            btns[0].classList.add('active'); 
+            btns[1].classList.remove('active'); 
+        } else { 
+            lf.classList.add('hidden'); 
+            rf.classList.remove('hidden'); 
+            btns[0].classList.remove('active'); 
+            btns[1].classList.add('active'); 
+        }
     },
 
     renderStore() {
@@ -441,7 +390,7 @@ const ui = {
         if (badge) badge.textContent = String(online.length);
         container.innerHTML = online.map(s => {
             const ago = Math.round((Date.now() - s.lastSeen) / 1000);
-            const agoText = ago < 5 ? 'aktif sekarang' : `${ago}d lalu`;
+            const agoText = ago < 5 ? 'aktif sekarang' : `${ago} detik lalu`;
             const dot = ago < 8 ? '#10b981' : '#f59e0b';
             return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border);">
                 <span style="width:8px;height:8px;border-radius:50%;background:${dot};display:inline-block;flex-shrink:0;"></span>
@@ -560,7 +509,6 @@ const ui = {
             store?.classList.add('hidden');
             nav?.classList.add('hidden');
             ['admin-dashboard','command-panel','purchase-panel'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
-            setTimeout(() => TurnstileManager.render('login'), 100);
         } else {
             auth?.classList.add('hidden');
             nav?.classList.remove('hidden');
@@ -599,11 +547,10 @@ const ui = {
 // APP LOGIC
 // ============================================
 const app = {
-    turnstileToken: null,
+    turnstileToken: 'bypassed', // Token bypassed
 
     async init() {
         try {
-            // Pastikan admin ada di Firestore
             const adminExists = await FirebaseDB.getUser(ADMIN_CONFIG.username);
             if (!adminExists) {
                 await FirebaseDB.saveUser(ADMIN_CONFIG.username, {
@@ -661,13 +608,16 @@ const app = {
 
     async handleLogin(e) {
         e.preventDefault();
-        if (!Security.checkRateLimit('login', 5, 60000)) { ui.toast('⛔ Terlalu banyak percobaan. Tunggu 1 menit.', 'error'); return; }
-        if (!app.turnstileToken) { ui.toast('⚠️ Selesaikan verifikasi keamanan!', 'error'); return; }
+        if (!Security.checkRateLimit('login', 10, 60000)) { ui.toast('⛔ Terlalu banyak percobaan. Tunggu 1 menit.', 'error'); return; }
+        
         const u = document.getElementById('login-user').value.trim();
         const p = document.getElementById('login-pass').value;
+        
         if (!u || !p) { ui.toast('Isi username dan password!', 'error'); return; }
+        
         const dbUser = await FirebaseDB.getUser(u);
-        if (!dbUser || dbUser.password !== p) { ui.toast('Username atau password salah.', 'error'); TurnstileManager.reset(); return; }
+        if (!dbUser || dbUser.password !== p) { ui.toast('Username atau password salah.', 'error'); return; }
+        
         const token = Security.generateToken();
         const userData = { ...dbUser, token, loginAt: new Date().toISOString() };
         sessionStorage.setItem('duskveil_session', JSON.stringify(userData));
@@ -678,29 +628,30 @@ const app = {
         ui.showPage('store');
         document.getElementById('login-user').value = '';
         document.getElementById('login-pass').value = '';
-        app.turnstileToken = null;
     },
 
     async handleRegister(e) {
         e.preventDefault();
-        if (!Security.checkRateLimit('register', 3, 60000)) { ui.toast('⛔ Terlalu banyak percobaan.', 'error'); return; }
-        if (!app.turnstileToken) { ui.toast('⚠️ Selesaikan verifikasi keamanan!', 'error'); return; }
+        if (!Security.checkRateLimit('register', 5, 60000)) { ui.toast('⛔ Terlalu banyak percobaan.', 'error'); return; }
+        
         const u  = document.getElementById('reg-user').value.trim();
         const p  = document.getElementById('reg-pass').value;
         const pc = document.getElementById('reg-pass-confirm').value;
+        
         if (!u || !p || !pc) { ui.toast('Isi semua field!', 'error'); return; }
         if (p !== pc) { ui.toast('Password tidak cocok!', 'error'); return; }
         if (!Security.validateUsername(u)) { ui.toast('Username hanya huruf, angka, underscore (3-16 karakter).', 'error'); return; }
         if (!Security.validatePassword(p)) { ui.toast('Password minimal 6 karakter.', 'error'); return; }
         if (u === ADMIN_CONFIG.username) { ui.toast('Username terlindungi.', 'error'); return; }
+        
         const existing = await FirebaseDB.getUser(u);
         if (existing) { ui.toast('Username sudah digunakan!', 'error'); return; }
+        
         await FirebaseDB.saveUser(u, { username: u, password: p, role: 'member', coin: 1000, createdAt: new Date().toISOString() });
         ui.toast('Registrasi berhasil! Silakan login.');
         ui.switchTab('login');
         document.getElementById('login-user').value = u;
         ['reg-user','reg-pass','reg-pass-confirm'].forEach(id => { document.getElementById(id).value = ''; });
-        app.turnstileToken = null;
     },
 
     async logout() {
@@ -713,7 +664,6 @@ const app = {
         sessionStorage.removeItem('duskveil_session');
         ui.showPage('auth');
         ui.toast('Anda telah keluar.');
-        app.turnstileToken = null;
     },
 
     async _deductCoin(user, price) {
@@ -814,7 +764,10 @@ const app = {
             await FirebaseDB.updateCommand(pending[i].id, { status });
         }
         if (allOk) { ui.toast(`✅ Semua ${pending.length} command berhasil!`); }
-        else { navigator.clipboard.writeText(pending.map(c => c.command).join('\n')); ui.toast('⚠️ Sebagian gagal. Di-copy — paste manual!', 'error'); }
+        else { 
+            await navigator.clipboard.writeText(pending.map(c => c.command).join('\n')); 
+            ui.toast('⚠️ Sebagian gagal. Command di-copy — paste manual di console server!', 'error'); 
+        }
         ui.renderCommandTable(); ui.updateAdminBadge(); ui.updateStats();
     },
 
@@ -855,7 +808,7 @@ const app = {
         if (!confirm('Konfirmasi terakhir: yakin?')) return;
         await FirebaseDB.clearCommands();
         ui.renderAdminTable(); ui.updateStats();
-        ui.toast('🗑️ Data direset!');
+        ui.toast('🗑️ Data command direset!');
     },
 
     fillAdmin(u, c) {
@@ -877,15 +830,12 @@ const app = {
     }
 };
 
-// Expose ke global scope SEBELUM init
+// Expose ke global scope
 window.app = app;
 window.ui = ui;
-window.TurnstileManager = TurnstileManager;
 
 window.addEventListener('DOMContentLoaded', () => app.init());
 window.addEventListener('beforeunload', async () => {
     const session = sessionStorage.getItem('duskveil_session');
     if (session) { const user = JSON.parse(session); await FirebaseDB.removeSession(user.username); }
 });
-
-// Expose ke global scope (wajib karena type="module")
