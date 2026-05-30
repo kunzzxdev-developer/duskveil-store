@@ -1,29 +1,115 @@
 // ============================================
-// FIREBASE CONFIG
+// SIMPLE STORAGE - TANPA FIREBASE
 // ============================================
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, collection, query, orderBy, limit, onSnapshot, getDocs, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-const firebaseConfig = {
-    apiKey: "AIzaSyCyEbIOIJ4DGEczi0yPWUSaA9BIM5TFgj0",
-    authDomain: "duskveilsmp.firebaseapp.com",
-    projectId: "duskveilsmp",
-    storageBucket: "duskveilsmp.firebasestorage.app",
-    messagingSenderId: "797107010544",
-    appId: "1:797107010544:web:6b5401cdb0cf045c0dbb35"
+// Initialize storage
+if (!localStorage.getItem('duskveil_users')) {
+    const defaultUsers = {
+        'admin': {
+            username: 'admin',
+            password: 'dusk@gnt3ng303#',
+            role: 'admin',
+            coin: 999999,
+            createdAt: new Date().toISOString()
+        }
+    };
+    localStorage.setItem('duskveil_users', JSON.stringify(defaultUsers));
+}
+
+if (!localStorage.getItem('duskveil_commands')) {
+    localStorage.setItem('duskveil_commands', JSON.stringify([]));
+}
+
+if (!localStorage.getItem('duskveil_purchases')) {
+    localStorage.setItem('duskveil_purchases', JSON.stringify([]));
+}
+
+// ============================================
+// DATABASE OPERATIONS (Local Storage)
+// ============================================
+const DB = {
+    async getUser(username) {
+        const users = JSON.parse(localStorage.getItem('duskveil_users') || '{}');
+        return users[username] || null;
+    },
+    
+    async saveUser(username, data) {
+        const users = JSON.parse(localStorage.getItem('duskveil_users') || '{}');
+        users[username] = data;
+        localStorage.setItem('duskveil_users', JSON.stringify(users));
+    },
+    
+    async updateCoin(username, coin) {
+        const users = JSON.parse(localStorage.getItem('duskveil_users') || '{}');
+        if (users[username]) {
+            users[username].coin = coin;
+            localStorage.setItem('duskveil_users', JSON.stringify(users));
+        }
+    },
+    
+    async getAllUsers() {
+        const users = JSON.parse(localStorage.getItem('duskveil_users') || '{}');
+        return Object.values(users);
+    },
+    
+    async addPurchase(data) {
+        const purchases = JSON.parse(localStorage.getItem('duskveil_purchases') || '[]');
+        purchases.unshift({
+            ...data,
+            id: Date.now(),
+            timestamp: new Date().toISOString()
+        });
+        // Keep only last 100 purchases
+        while (purchases.length > 100) purchases.pop();
+        localStorage.setItem('duskveil_purchases', JSON.stringify(purchases));
+    },
+    
+    async getPurchases() {
+        return JSON.parse(localStorage.getItem('duskveil_purchases') || '[]');
+    },
+    
+    async addCommand(data) {
+        const commands = JSON.parse(localStorage.getItem('duskveil_commands') || '[]');
+        commands.unshift({
+            ...data,
+            id: Date.now(),
+            timestamp: new Date().toISOString()
+        });
+        localStorage.setItem('duskveil_commands', JSON.stringify(commands));
+    },
+    
+    async getCommands() {
+        return JSON.parse(localStorage.getItem('duskveil_commands') || '[]');
+    },
+    
+    async updateCommand(id, data) {
+        const commands = JSON.parse(localStorage.getItem('duskveil_commands') || '[]');
+        const index = commands.findIndex(c => c.id == id);
+        if (index !== -1) {
+            commands[index] = { ...commands[index], ...data };
+            localStorage.setItem('duskveil_commands', JSON.stringify(commands));
+        }
+    },
+    
+    async deleteCommand(id) {
+        const commands = JSON.parse(localStorage.getItem('duskveil_commands') || '[]');
+        const filtered = commands.filter(c => c.id != id);
+        localStorage.setItem('duskveil_commands', JSON.stringify(filtered));
+    },
+    
+    async getPendingCommands() {
+        const commands = JSON.parse(localStorage.getItem('duskveil_commands') || '[]');
+        return commands.filter(c => c.status === 'pending');
+    },
+    
+    async clearCommands() {
+        localStorage.setItem('duskveil_commands', JSON.stringify([]));
+    }
 };
-
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp);
 
 // ============================================
 // CONSTANTS
 // ============================================
-const ADMIN_CONFIG = { 
-    username: 'admin', 
-    password: 'dusk@gnt3ng303#' 
-};
-
 const SKILLS_LIST = [
     { name: 'Penambangan', id: 'mining' },
     { name: 'Pertanian', id: 'farming' },
@@ -51,59 +137,6 @@ function showToast(msg, type = 'success') {
     box.appendChild(div);
     setTimeout(() => div.remove(), 3000);
 }
-
-// ============================================
-// DATABASE OPERATIONS
-// ============================================
-const DB = {
-    async getUser(username) {
-        const snap = await getDoc(doc(db, 'users', username));
-        return snap.exists() ? snap.data() : null;
-    },
-    async saveUser(username, data) {
-        await setDoc(doc(db, 'users', username), data);
-    },
-    async updateCoin(username, coin) {
-        await updateDoc(doc(db, 'users', username), { coin });
-    },
-    async getAllUsers() {
-        const snap = await getDocs(collection(db, 'users'));
-        return snap.docs.map(d => d.data());
-    },
-    async addPurchase(data) {
-        await addDoc(collection(db, 'purchases'), { ...data, timestamp: serverTimestamp() });
-    },
-    async getPurchases(limitCount = 50) {
-        const q = query(collection(db, 'purchases'), orderBy('timestamp', 'desc'), limit(limitCount));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    },
-    async addCommand(data) {
-        await addDoc(collection(db, 'commands'), { ...data, timestamp: serverTimestamp() });
-    },
-    async getCommands() {
-        const q = query(collection(db, 'commands'), orderBy('timestamp', 'desc'), limit(100));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    },
-    async updateCommand(id, data) {
-        await updateDoc(doc(db, 'commands', id), data);
-    },
-    async deleteCommand(id) {
-        await deleteDoc(doc(db, 'commands', id));
-    },
-    async getPendingCommands() {
-        const q = query(collection(db, 'commands'), where('status', '==', 'pending'));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    },
-    async clearCommands() {
-        const snap = await getDocs(collection(db, 'commands'));
-        for (const docSnap of snap.docs) {
-            await deleteDoc(docSnap.ref);
-        }
-    }
-};
 
 // ============================================
 // UI FUNCTIONS
@@ -195,14 +228,10 @@ const ui = {
     async updateAdminBadge() {
         const badge = document.getElementById('pending-badge');
         if (!badge) return;
-        try {
-            const pending = await DB.getPendingCommands();
-            const count = pending.length;
-            badge.textContent = count;
-            badge.style.display = count > 0 ? 'inline-flex' : 'none';
-        } catch(e) {
-            console.error('Error updating badge:', e);
-        }
+        const pending = await DB.getPendingCommands();
+        const count = pending.length;
+        badge.textContent = count;
+        badge.style.display = count > 0 ? 'inline-flex' : 'none';
     },
 
     renderStore() {
@@ -275,99 +304,82 @@ const ui = {
     async renderAdminTable() {
         const tbody = document.getElementById('user-table-body');
         if (!tbody) return;
-        try {
-            const users = await DB.getAllUsers();
-            if (users.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Belum ada member</td></tr>';
-                return;
-            }
-            tbody.innerHTML = users.map(u => `
-                <tr>
-                    <td>${sanitize(u.username)}</td>
-                    <td><span class="status-badge ${u.role === 'admin' ? 'status-admin' : 'status-member'}">${u.role.toUpperCase()}</span></td>
-                    <td style="color:var(--gold);">${(u.coin || 0).toLocaleString()}</td>
-                    <td>${u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '-'}</td>
-                    <td><button class="btn-tbl-edit" onclick="app.fillAdmin('${sanitize(u.username)}', ${u.coin || 0})">Edit</button></td>
-                </tr>
-            `).join('');
-        } catch(e) {
-            console.error('Error rendering admin table:', e);
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Error loading data</td></tr>';
+        const users = await DB.getAllUsers();
+        if (users.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Belum ada member</td></tr>';
+            return;
         }
+        tbody.innerHTML = users.map(u => `
+            <tr>
+                <td>${sanitize(u.username)}</td>
+                <td><span class="status-badge ${u.role === 'admin' ? 'status-admin' : 'status-member'}">${u.role.toUpperCase()}</span></td>
+                <td style="color:var(--gold);">${(u.coin || 0).toLocaleString()}</td>
+                <td>${u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '-'}</td>
+                <td><button class="btn-tbl-edit" onclick="app.fillAdmin('${sanitize(u.username)}', ${u.coin || 0})">Edit</button></td>
+            </tr>
+        `).join('');
     },
 
     async updateStats() {
-        try {
-            const users = await DB.getAllUsers();
-            const totalCoin = users.reduce((sum, u) => sum + (u.coin || 0), 0);
-            const purchases = await DB.getPurchases(999);
-            const pending = await DB.getPendingCommands();
-            
-            const totalUsersEl = document.getElementById('stat-total-users');
-            const totalCoinEl = document.getElementById('stat-total-coins');
-            const totalPurchasesEl = document.getElementById('stat-total-purchases');
-            const pendingCommandsEl = document.getElementById('stat-pending-commands');
-            
-            if (totalUsersEl) totalUsersEl.textContent = users.length;
-            if (totalCoinEl) totalCoinEl.textContent = totalCoin.toLocaleString();
-            if (totalPurchasesEl) totalPurchasesEl.textContent = purchases.length;
-            if (pendingCommandsEl) pendingCommandsEl.textContent = pending.length;
-        } catch(e) {
-            console.error('Error updating stats:', e);
-        }
+        const users = await DB.getAllUsers();
+        const totalCoin = users.reduce((sum, u) => sum + (u.coin || 0), 0);
+        const purchases = await DB.getPurchases();
+        const pending = await DB.getPendingCommands();
+        
+        const totalUsersEl = document.getElementById('stat-total-users');
+        const totalCoinEl = document.getElementById('stat-total-coins');
+        const totalPurchasesEl = document.getElementById('stat-total-purchases');
+        const pendingCommandsEl = document.getElementById('stat-pending-commands');
+        
+        if (totalUsersEl) totalUsersEl.textContent = users.length;
+        if (totalCoinEl) totalCoinEl.textContent = totalCoin.toLocaleString();
+        if (totalPurchasesEl) totalPurchasesEl.textContent = purchases.length;
+        if (pendingCommandsEl) pendingCommandsEl.textContent = pending.length;
     },
 
     async renderCommandTable() {
         const tbody = document.getElementById('command-table-body');
         if (!tbody) return;
-        try {
-            const commands = await DB.getCommands();
-            if (commands.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Tidak ada command</td></tr>';
-                return;
-            }
-            tbody.innerHTML = commands.map(cmd => {
-                const statusClass = cmd.status === 'pending' ? 'status-pending' : 'status-executed';
-                const statusText = cmd.status === 'pending' ? '⏳ Pending' : '✅ Executed';
-                return `
-                    <tr>
-                        <td style="font-size:0.75rem;">${cmd.timestamp?.toDate ? cmd.timestamp.toDate().toLocaleString() : '-'}</td>
-                        <td><code style="background:#1a1a2a;padding:4px 8px;border-radius:4px;">${sanitize(cmd.command)}</code><br><small>👤 ${sanitize(cmd.username)}</small></td>
-                        <td><span class="command-status ${statusClass}">${statusText}</span></td>
-                        <td>${cmd.status === 'pending' ? `<button class="btn-execute" onclick="app.markExecuted('${cmd.id}')">✓ Tandai Selesai</button>` : `<button class="btn-copy" onclick="app.deleteCommand('${cmd.id}')">🗑 Hapus</button>`}</td>
-                    </tr>
-                `;
-            }).join('');
-        } catch(e) {
-            console.error('Error rendering command table:', e);
+        const commands = await DB.getCommands();
+        if (commands.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Tidak ada command</td></tr>';
+            return;
         }
+        tbody.innerHTML = commands.map(cmd => {
+            const statusClass = cmd.status === 'pending' ? 'status-pending' : 'status-executed';
+            const statusText = cmd.status === 'pending' ? '⏳ Pending' : '✅ Executed';
+            return `
+                <tr>
+                    <td style="font-size:0.75rem;">${cmd.timestamp ? new Date(cmd.timestamp).toLocaleString() : '-'}</td>
+                    <td><code style="background:#1a1a2a;padding:4px 8px;border-radius:4px;">${sanitize(cmd.command)}</code><br><small>👤 ${sanitize(cmd.username)}</small></td>
+                    <td><span class="command-status ${statusClass}">${statusText}</span></td>
+                    <td>${cmd.status === 'pending' ? `<button class="btn-execute" onclick="app.markExecuted('${cmd.id}')">✓ Tandai Selesai</button>` : `<button class="btn-copy" onclick="app.deleteCommand('${cmd.id}')">🗑 Hapus</button>`}</td>
+                </tr>
+            `;
+        }).join('');
     },
 
     async renderPurchaseLog() {
         const tbody = document.getElementById('purchase-log-body');
         if (!tbody) return;
-        try {
-            const purchases = await DB.getPurchases(50);
-            if (purchases.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Belum ada pembelian</td></tr>';
-                return;
-            }
-            tbody.innerHTML = purchases.map(p => {
-                const statusClass = p.status === 'pending' ? 'status-pending' : 'status-executed';
-                const statusText = p.status === 'pending' ? '⏳ Pending' : '✅ Selesai';
-                return `
-                    <tr>
-                        <td style="font-size:0.75rem;">${p.timestamp?.toDate ? p.timestamp.toDate().toLocaleString() : '-'}</td>
-                        <td>${sanitize(p.username)}</td>
-                        <td>${sanitize(p.itemName)}</td>
-                        <td style="color:var(--gold);">${(p.price || 0).toLocaleString()} 🪙</td>
-                        <td><span class="command-status ${statusClass}">${statusText}</span></td>
-                    </tr>
-                `;
-            }).join('');
-        } catch(e) {
-            console.error('Error rendering purchase log:', e);
+        const purchases = await DB.getPurchases();
+        if (purchases.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Belum ada pembelian</td></tr>';
+            return;
         }
+        tbody.innerHTML = purchases.map(p => {
+            const statusClass = p.status === 'pending' ? 'status-pending' : 'status-executed';
+            const statusText = p.status === 'pending' ? '⏳ Pending' : '✅ Selesai';
+            return `
+                <tr>
+                    <td style="font-size:0.75rem;">${p.timestamp ? new Date(p.timestamp).toLocaleString() : '-'}</td>
+                    <td>${sanitize(p.username)}</td>
+                    <td>${sanitize(p.itemName)}</td>
+                    <td style="color:var(--gold);">${(p.price || 0).toLocaleString()} 🪙</td>
+                    <td><span class="command-status ${statusClass}">${statusText}</span></td>
+                </tr>
+            `;
+        }).join('');
     },
 
     showSkillModal(price, callback) {
@@ -432,47 +444,28 @@ const ui = {
 const app = {
     async init() {
         console.log('App starting...');
-        try {
-            // Create admin if not exists
-            const adminExists = await DB.getUser(ADMIN_CONFIG.username);
-            if (!adminExists) {
-                await DB.saveUser(ADMIN_CONFIG.username, {
-                    username: ADMIN_CONFIG.username,
-                    password: ADMIN_CONFIG.password,
-                    role: 'admin',
-                    coin: 999999,
-                    createdAt: new Date().toISOString()
-                });
-                console.log('Admin created');
-            }
-
-            ui.renderStore();
-
-            // Check existing session
-            const session = sessionStorage.getItem('duskveil_session');
-            if (session) {
-                try {
-                    const user = JSON.parse(session);
-                    const dbUser = await DB.getUser(user.username);
-                    if (dbUser) {
-                        ui.showPage('store');
-                        ui.updateHeader();
-                        ui.updateAdminBadge();
-                    } else {
-                        sessionStorage.removeItem('duskveil_session');
-                        ui.showPage('auth');
-                    }
-                } catch(e) {
+        // Check existing session
+        const session = sessionStorage.getItem('duskveil_session');
+        if (session) {
+            try {
+                const user = JSON.parse(session);
+                const dbUser = await DB.getUser(user.username);
+                if (dbUser) {
+                    ui.showPage('store');
+                    ui.updateHeader();
+                    ui.updateAdminBadge();
+                } else {
                     sessionStorage.removeItem('duskveil_session');
                     ui.showPage('auth');
                 }
-            } else {
+            } catch(e) {
+                sessionStorage.removeItem('duskveil_session');
                 ui.showPage('auth');
             }
-        } catch (err) {
-            console.error('Init error:', err);
+        } else {
             ui.showPage('auth');
         }
+        ui.renderStore();
     },
 
     async handleLogin(e) {
@@ -487,7 +480,6 @@ const app = {
             return;
         }
         
-        // Disable button
         if (btn) {
             btn.disabled = true;
             btn.innerHTML = '<span class="btn-text">Memuat...</span><span class="btn-arrow">→</span>';
@@ -517,7 +509,6 @@ const app = {
             ui.showPage('store');
             ui.updateAdminBadge();
             
-            // Clear form
             document.getElementById('login-user').value = '';
             document.getElementById('login-pass').value = '';
             
@@ -525,7 +516,6 @@ const app = {
             console.error('Login error:', err);
             ui.toast('Login gagal: ' + err.message, 'error');
         } finally {
-            // Re-enable button
             if (btn) {
                 btn.disabled = false;
                 btn.innerHTML = '<span class="btn-text">MASUK SERVER</span><span class="btn-arrow">→</span>';
@@ -557,6 +547,10 @@ const app = {
             ui.toast('Password minimal 6 karakter!', 'error');
             return;
         }
+        if (username === 'admin') {
+            ui.toast('Username tidak tersedia!', 'error');
+            return;
+        }
         
         if (btn) {
             btn.disabled = true;
@@ -582,7 +576,6 @@ const app = {
             ui.switchTab('login');
             document.getElementById('login-user').value = username;
             
-            // Clear register form
             document.getElementById('reg-user').value = '';
             document.getElementById('reg-pass').value = '';
             document.getElementById('reg-pass-confirm').value = '';
@@ -819,7 +812,7 @@ const app = {
 
     async exportAllData() {
         const users = await DB.getAllUsers();
-        const purchases = await DB.getPurchases(999);
+        const purchases = await DB.getPurchases();
         const commands = await DB.getCommands();
         const data = JSON.stringify({ users, purchases, commands }, null, 2);
         const blob = new Blob([data], { type: 'application/json' });
