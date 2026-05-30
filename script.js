@@ -1,5 +1,5 @@
 // ============================================
-// DuskVeilSMP - FIREBASE REAL-TIME SYNC
+// DuskVeilSMP - FIREBASE REAL-TIME SYNC (FIXED)
 // ============================================
 
 // Firebase Config
@@ -20,34 +20,54 @@ let commandsCollection = null;
 let purchasesCollection = null;
 let currentUser = null;
 let unsubscribeListeners = [];
+let firebaseReady = false;
 
 // ============================================
 // INIT FIREBASE
 // ============================================
-async function initFirebase() {
-    return new Promise((resolve, reject) => {
-        const firebaseAppScript = document.createElement('script');
+function initFirebase() {
+    return new Promise(function(resolve, reject) {
+        // Check if firebase already loaded
+        if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0) {
+            try {
+                db = firebase.firestore();
+                usersCollection = db.collection('users');
+                sessionsCollection = db.collection('sessions');
+                commandsCollection = db.collection('commands');
+                purchasesCollection = db.collection('purchases');
+                firebaseReady = true;
+                resolve();
+                return;
+            } catch(e) {
+                reject(e);
+                return;
+            }
+        }
+        
+        // Load Firebase SDKs
+        var firebaseAppScript = document.createElement('script');
         firebaseAppScript.src = 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-        firebaseAppScript.onload = () => {
-            const firebaseFirestoreScript = document.createElement('script');
+        firebaseAppScript.onload = function() {
+            var firebaseFirestoreScript = document.createElement('script');
             firebaseFirestoreScript.src = 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
-            firebaseFirestoreScript.onload = () => {
+            firebaseFirestoreScript.onload = function() {
                 try {
-                    const app = firebase.initializeApp(FIREBASE_CONFIG);
+                    var app = firebase.initializeApp(FIREBASE_CONFIG);
                     db = firebase.firestore(app);
                     usersCollection = db.collection('users');
                     sessionsCollection = db.collection('sessions');
                     commandsCollection = db.collection('commands');
                     purchasesCollection = db.collection('purchases');
+                    firebaseReady = true;
                     resolve();
                 } catch(e) {
                     reject(e);
                 }
             };
-            firebaseFirestoreScript.onerror = reject;
+            firebaseFirestoreScript.onerror = function(err) { reject(err); };
             document.head.appendChild(firebaseFirestoreScript);
         };
-        firebaseAppScript.onerror = reject;
+        firebaseAppScript.onerror = function(err) { reject(err); };
         document.head.appendChild(firebaseAppScript);
     });
 }
@@ -62,9 +82,9 @@ function sanitize(str) {
 
 function showToast(msg, type) {
     if (!type) type = 'success';
-    const box = document.getElementById('toast-box');
+    var box = document.getElementById('toast-box');
     if (!box) return;
-    const div = document.createElement('div');
+    var div = document.createElement('div');
     div.className = 'toast ' + type;
     div.innerHTML = '<span>' + sanitize(msg) + '</span><span style="cursor:pointer;margin-left:10px;" onclick="this.parentElement.remove()">✕</span>';
     box.appendChild(div);
@@ -90,7 +110,7 @@ function setupRealtimeListeners() {
                 var newData = doc.data();
                 if(currentUser.coin !== newData.coin) {
                     currentUser.coin = newData.coin;
-                    localStorage.setItem('duskveil_session', JSON.stringify(currentUser));
+                    localStorage.setItem('duskveil_session', JSON.stringify({username: currentUser.username, role: currentUser.role, coin: currentUser.coin}));
                     ui.updateHeader();
                     showToast('💰 Saldo diperbarui: ' + newData.coin.toLocaleString() + ' koin', 'info');
                 }
@@ -115,7 +135,8 @@ function setupRealtimeListeners() {
         
         var commandsUnsub = commandsCollection.onSnapshot(function() {
             ui.updateAdminBadge();
-            if(!document.getElementById('command-panel')?.classList.contains('hidden')) {
+            var cmdPanel = document.getElementById('command-panel');
+            if(cmdPanel && !cmdPanel.classList.contains('hidden')) {
                 ui.renderCommandTable();
             }
             ui.updateStats();
@@ -123,7 +144,8 @@ function setupRealtimeListeners() {
         unsubscribeListeners.push(commandsUnsub);
         
         var purchasesUnsub = purchasesCollection.onSnapshot(function() {
-            if(!document.getElementById('purchase-panel')?.classList.contains('hidden')) {
+            var purchasePanel = document.getElementById('purchase-panel');
+            if(purchasePanel && !purchasePanel.classList.contains('hidden')) {
                 ui.renderPurchaseLog();
             }
             ui.updateStats();
@@ -135,7 +157,7 @@ function setupRealtimeListeners() {
 // ============================================
 // UI FUNCTIONS
 // ============================================
-const ui = {
+var ui = {
     switchTab: function(tab) {
         var loginForm = document.getElementById('form-login');
         var registerForm = document.getElementById('form-register');
@@ -190,15 +212,15 @@ const ui = {
                 if (isAdmin) {
                     if(adminDashboard) adminDashboard.classList.remove('hidden');
                     if(storeSection) storeSection.classList.add('hidden');
-                    this.renderAdminTable();
-                    this.updateStats();
-                    this.renderOnlinePlayers();
+                    ui.renderAdminTable();
+                    ui.updateStats();
+                    ui.renderOnlinePlayers();
                 } else {
                     if(storeSection) storeSection.classList.remove('hidden');
                     if(adminDashboard) adminDashboard.classList.add('hidden');
                 }
-                this.updateHeader();
-                this.updateAdminBadge();
+                ui.updateHeader();
+                ui.updateAdminBadge();
             }
         }
     },
@@ -216,7 +238,7 @@ const ui = {
     updateAdminBadge: async function() {
         var badge = document.getElementById('pending-badge');
         if (!badge) return;
-        if(currentUser && currentUser.role === 'admin') {
+        if(currentUser && currentUser.role === 'admin' && firebaseReady) {
             try {
                 var snapshot = await commandsCollection.where('status', '==', 'pending').get();
                 var count = snapshot.size;
@@ -302,6 +324,10 @@ const ui = {
     renderAdminTable: async function() {
         var tbody = document.getElementById('user-table-body');
         if (!tbody) return;
+        if(!firebaseReady) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Memuat...</td></tr>';
+            return;
+        }
         
         try {
             var snapshot = await usersCollection.get();
@@ -334,6 +360,7 @@ const ui = {
     },
 
     updateStats: async function() {
+        if(!firebaseReady) return;
         try {
             var usersSnapshot = await usersCollection.get();
             var totalCoin = 0;
@@ -365,6 +392,10 @@ const ui = {
         var container = document.getElementById('online-players-list');
         var countEl = document.getElementById('online-count');
         if (!container) return;
+        if(!firebaseReady) {
+            container.innerHTML = '<div style="color:var(--text3);padding:8px 0;">Memuat...</div>';
+            return;
+        }
         
         try {
             var now = Date.now();
@@ -403,6 +434,10 @@ const ui = {
     renderCommandTable: async function() {
         var tbody = document.getElementById('command-table-body');
         if (!tbody) return;
+        if(!firebaseReady) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Memuat...</td></tr>';
+            return;
+        }
         
         try {
             var snapshot = await commandsCollection.orderBy('timestamp', 'desc').limit(100).get();
@@ -441,6 +476,10 @@ const ui = {
     renderPurchaseLog: async function() {
         var tbody = document.getElementById('purchase-log-body');
         if (!tbody) return;
+        if(!firebaseReady) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Memuat...</td></tr>';
+            return;
+        }
         
         try {
             var snapshot = await purchasesCollection.orderBy('timestamp', 'desc').limit(50).get();
@@ -564,13 +603,15 @@ const ui = {
 // ============================================
 // APP FUNCTIONS
 // ============================================
-const app = {
+var app = {
     init: async function() {
         try {
             var overlay = document.getElementById('loading-overlay');
-            if(overlay) overlay.style.display = 'none';
             
+            // Initialize Firebase first
             await initFirebase();
+            
+            if(overlay) overlay.style.display = 'none';
             
             // Create default admin if not exists
             var adminDoc = await usersCollection.doc('admin').get();
@@ -582,10 +623,12 @@ const app = {
                     coin: 999999,
                     createdAt: new Date().toISOString()
                 });
+                console.log('Admin created');
             }
             
             ui.renderStore();
             
+            // Check saved session
             var savedSession = localStorage.getItem('duskveil_session');
             if(savedSession) {
                 try {
@@ -603,7 +646,7 @@ const app = {
                         ui.showPage('store');
                         ui.updateHeader();
                         ui.updateAdminBadge();
-                        this.startHeartbeat();
+                        app.startHeartbeat();
                     } else {
                         localStorage.removeItem('duskveil_session');
                         ui.showPage('auth');
@@ -616,7 +659,7 @@ const app = {
                 ui.showPage('auth');
             }
             
-            this.initParticles();
+            app.initParticles();
         } catch(e) {
             console.error('Init error:', e);
             var overlay = document.getElementById('loading-overlay');
@@ -643,7 +686,7 @@ const app = {
 
     startHeartbeat: function() {
         setInterval(function() {
-            if(currentUser) {
+            if(currentUser && firebaseReady) {
                 sessionsCollection.doc(currentUser.username).update({
                     lastSeen: Date.now()
                 }).catch(function() {});
@@ -653,6 +696,11 @@ const app = {
 
     handleLogin: async function(e) {
         e.preventDefault();
+        
+        if(!firebaseReady) {
+            showToast('Sistem masih memuat, tunggu sebentar...', 'error');
+            return;
+        }
         
         var username = document.getElementById('login-user').value.trim();
         var password = document.getElementById('login-pass').value;
@@ -700,12 +748,13 @@ const app = {
             ui.updateHeader();
             ui.showPage('store');
             ui.updateAdminBadge();
-            this.startHeartbeat();
+            app.startHeartbeat();
             
             document.getElementById('login-user').value = '';
             document.getElementById('login-pass').value = '';
             
         } catch(err) {
+            console.error('Login error:', err);
             showToast('Login gagal: ' + err.message, 'error');
         } finally {
             if(btn) {
@@ -717,6 +766,11 @@ const app = {
 
     handleRegister: async function(e) {
         e.preventDefault();
+        
+        if(!firebaseReady) {
+            showToast('Sistem masih memuat, tunggu sebentar...', 'error');
+            return;
+        }
         
         var username = document.getElementById('reg-user').value.trim();
         var password = document.getElementById('reg-pass').value;
@@ -783,7 +837,7 @@ const app = {
     },
 
     logout: async function() {
-        if(currentUser) {
+        if(currentUser && firebaseReady) {
             try {
                 await sessionsCollection.doc(currentUser.username).delete();
             } catch(e) {}
@@ -799,6 +853,7 @@ const app = {
     },
 
     buyBook: async function(itemName, price, cmd) {
+        if (!firebaseReady) { showToast('Sistem masih memuat...', 'error'); return; }
         if (!currentUser) { showToast('Silakan login!', 'error'); return; }
         if ((currentUser.coin || 0) < price) { showToast('Koin tidak cukup! Butuh ' + price.toLocaleString(), 'error'); return; }
         if (!confirm('Beli ' + itemName + ' seharga ' + price.toLocaleString() + ' koin?')) return;
@@ -807,7 +862,7 @@ const app = {
             var newCoin = (currentUser.coin || 0) - price;
             await usersCollection.doc(currentUser.username).update({ coin: newCoin });
             currentUser.coin = newCoin;
-            localStorage.setItem('duskveil_session', JSON.stringify(currentUser));
+            localStorage.setItem('duskveil_session', JSON.stringify({username: currentUser.username, role: currentUser.role, coin: currentUser.coin}));
             ui.updateHeader();
             
             await commandsCollection.add({
@@ -833,6 +888,7 @@ const app = {
     },
 
     buyRank: async function(rankName, price, rankId) {
+        if (!firebaseReady) { showToast('Sistem masih memuat...', 'error'); return; }
         if (!currentUser) { showToast('Silakan login!', 'error'); return; }
         if ((currentUser.coin || 0) < price) { showToast('Koin tidak cukup! Butuh ' + price.toLocaleString(), 'error'); return; }
         if (!confirm('Beli rank ' + rankName + ' seharga ' + price.toLocaleString() + ' koin?')) return;
@@ -841,7 +897,7 @@ const app = {
             var newCoin = (currentUser.coin || 0) - price;
             await usersCollection.doc(currentUser.username).update({ coin: newCoin });
             currentUser.coin = newCoin;
-            localStorage.setItem('duskveil_session', JSON.stringify(currentUser));
+            localStorage.setItem('duskveil_session', JSON.stringify({username: currentUser.username, role: currentUser.role, coin: currentUser.coin}));
             ui.updateHeader();
             
             var commandsList = [
@@ -876,6 +932,7 @@ const app = {
     },
 
     showSkillSelection: function(price) {
+        if (!firebaseReady) { showToast('Sistem masih memuat...', 'error'); return; }
         if (!currentUser) { showToast('Silakan login!', 'error'); return; }
         if ((currentUser.coin || 0) < price) { showToast('Koin tidak cukup!', 'error'); return; }
         ui.showSkillModal(price, function(skillName, actualPrice) {
@@ -884,6 +941,7 @@ const app = {
     },
 
     upgradeSkill: async function(skillName, price) {
+        if (!firebaseReady) return;
         if (!currentUser) return;
         var level = prompt('Level untuk skill ' + skillName + ' (1-1000):', '100');
         if (!level || isNaN(level) || level < 1 || level > 1000) {
@@ -896,7 +954,7 @@ const app = {
             var newCoin = (currentUser.coin || 0) - price;
             await usersCollection.doc(currentUser.username).update({ coin: newCoin });
             currentUser.coin = newCoin;
-            localStorage.setItem('duskveil_session', JSON.stringify(currentUser));
+            localStorage.setItem('duskveil_session', JSON.stringify({username: currentUser.username, role: currentUser.role, coin: currentUser.coin}));
             ui.updateHeader();
             
             var skillId = skillName.toLowerCase().replace(/ /g, '');
@@ -923,6 +981,7 @@ const app = {
     },
 
     buyAllSkills: async function(price) {
+        if (!firebaseReady) { showToast('Sistem masih memuat...', 'error'); return; }
         if (!currentUser) { showToast('Silakan login!', 'error'); return; }
         if ((currentUser.coin || 0) < price) { showToast('Koin tidak cukup!', 'error'); return; }
         var maxLevel = prompt('Set semua skill ke level berapa? (1-1000):', '1000');
@@ -936,7 +995,7 @@ const app = {
             var newCoin = (currentUser.coin || 0) - price;
             await usersCollection.doc(currentUser.username).update({ coin: newCoin });
             currentUser.coin = newCoin;
-            localStorage.setItem('duskveil_session', JSON.stringify(currentUser));
+            localStorage.setItem('duskveil_session', JSON.stringify({username: currentUser.username, role: currentUser.role, coin: currentUser.coin}));
             ui.updateHeader();
             
             await commandsCollection.add({
@@ -962,6 +1021,7 @@ const app = {
     },
 
     markExecuted: async function(id) {
+        if(!firebaseReady) return;
         try {
             await commandsCollection.doc(id).update({ status: 'executed' });
             ui.renderCommandTable();
@@ -972,6 +1032,7 @@ const app = {
     },
 
     deleteCommand: async function(id) {
+        if(!firebaseReady) return;
         if (!confirm('Hapus command ini?')) return;
         try {
             await commandsCollection.doc(id).delete();
@@ -983,6 +1044,7 @@ const app = {
     },
 
     executeAllCommands: async function() {
+        if(!firebaseReady) return;
         try {
             var snapshot = await commandsCollection.where('status', '==', 'pending').get();
             var commands = [];
@@ -1013,6 +1075,7 @@ const app = {
     },
 
     copyAllCommands: async function() {
+        if(!firebaseReady) return;
         try {
             var snapshot = await commandsCollection.where('status', '==', 'pending').get();
             var commands = [];
@@ -1034,6 +1097,7 @@ const app = {
     },
 
     exportCommands: async function() {
+        if(!firebaseReady) return;
         try {
             var snapshot = await commandsCollection.get();
             var commands = [];
@@ -1056,14 +1120,13 @@ const app = {
     },
 
     clearAllCommands: async function() {
+        if(!firebaseReady) return;
         if (!confirm('Hapus SEMUA command?')) return;
         try {
             var snapshot = await commandsCollection.get();
-            var batch = db.batch();
-            snapshot.forEach(function(doc) {
-                batch.delete(doc.ref);
-            });
-            await batch.commit();
+            for(var i = 0; i < snapshot.docs.length; i++) {
+                await commandsCollection.doc(snapshot.docs[i].id).delete();
+            }
             showToast('Semua command dihapus!', 'success');
             ui.renderCommandTable();
         } catch(err) {
@@ -1072,6 +1135,7 @@ const app = {
     },
 
     exportAllData: async function() {
+        if(!firebaseReady) return;
         try {
             var usersSnapshot = await usersCollection.get();
             var users = [];
@@ -1107,6 +1171,11 @@ const app = {
     },
 
     adminSetCoin: async function() {
+        if(!firebaseReady) {
+            showToast('Sistem masih memuat...', 'error');
+            return;
+        }
+        
         var username = document.getElementById('admin-search')?.value.trim();
         var coinValue = document.getElementById('admin-coin')?.value;
         
@@ -1131,7 +1200,7 @@ const app = {
             
             if(currentUser && currentUser.username === username) {
                 currentUser.coin = parseInt(coinValue);
-                localStorage.setItem('duskveil_session', JSON.stringify(currentUser));
+                localStorage.setItem('duskveil_session', JSON.stringify({username: currentUser.username, role: currentUser.role, coin: currentUser.coin}));
                 ui.updateHeader();
             }
             
@@ -1148,7 +1217,7 @@ const app = {
 window.app = app;
 window.ui = ui;
 
-// Start app
+// Start app - tunggu sampai DOM ready
 document.addEventListener('DOMContentLoaded', function() {
     app.init();
 });
