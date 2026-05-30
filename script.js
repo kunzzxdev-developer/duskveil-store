@@ -42,7 +42,7 @@ const API_CONFIG = {
     panelUrl: 'https://panel.arqonara.com'
 };
 
-// Admin credentials
+// Admin credentials - PASTIKAN INI BENAR
 const ADMIN_CONFIG = { 
     username: 'admin', 
     password: 'dusk@gnt3ng303#' 
@@ -63,8 +63,13 @@ const SKILLS_LIST = [
 // ============================================
 const FirebaseDB = {
     async getUser(username) {
-        const snap = await getDoc(doc(db, 'users', username));
-        return snap.exists() ? snap.data() : null;
+        try {
+            const snap = await getDoc(doc(db, 'users', username));
+            return snap.exists() ? snap.data() : null;
+        } catch (e) {
+            console.error('getUser error:', e);
+            return null;
+        }
     },
     async getAllUsers() {
         const snap = await getDocs(collection(db, 'users'));
@@ -198,7 +203,7 @@ const Security = {
     validateUsername: (u) => /^[a-zA-Z0-9_]{3,16}$/.test(u),
     validatePassword: (p) => p.length >= 6,
     rateLimiter: {},
-    checkRateLimit(action, max = 10, windowMs = 60000) {
+    checkRateLimit(action, max = 20, windowMs = 60000) {
         const now = Date.now();
         if (!this.rateLimiter[action]) { 
             this.rateLimiter[action] = { attempts: 1, first: now }; 
@@ -215,7 +220,7 @@ const Security = {
         return true;
     },
     generateToken() {
-        return Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2,'0')).join('');
+        return 'token_' + Date.now() + '_' + Math.random().toString(36).substr(2, 16);
     }
 };
 
@@ -367,7 +372,7 @@ const ui = {
         const tbody = document.getElementById('user-table-body');
         if (!tbody) return;
         const users = await FirebaseDB.getAllUsers();
-        if (users.length === 0) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);">📭 Tidak ada member</td></tr>'; return; }
+        if (users.length === 0) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);">📭 Tidak ada member</td><tr>'; return; }
         tbody.innerHTML = users.map(u => `
             <tr>
                 <td>${Security.sanitize(u.username)}</td>
@@ -518,11 +523,21 @@ const ui = {
             if (session) {
                 const user = JSON.parse(session);
                 const isAdmin = user.role === 'admin';
-                document.getElementById('admin-notice')?.classList.toggle('hidden', !isAdmin);
-                document.getElementById('nav-commands-btn')?.classList.toggle('hidden', !isAdmin);
-                document.getElementById('nav-purchases-btn')?.classList.toggle('hidden', !isAdmin);
-                document.getElementById('nav-admin-btn')?.classList.toggle('hidden', !isAdmin);
-                isAdmin ? this.showAdminPanel() : this.showStorePanel();
+                const adminNotice = document.getElementById('admin-notice');
+                if (adminNotice) adminNotice.classList.toggle('hidden', !isAdmin);
+                const commandsBtn = document.getElementById('nav-commands-btn');
+                if (commandsBtn) commandsBtn.classList.toggle('hidden', !isAdmin);
+                const purchasesBtn = document.getElementById('nav-purchases-btn');
+                if (purchasesBtn) purchasesBtn.classList.toggle('hidden', !isAdmin);
+                const adminBtn = document.getElementById('nav-admin-btn');
+                if (adminBtn) adminBtn.classList.toggle('hidden', !isAdmin);
+                if (isAdmin) {
+                    this.showAdminPanel();
+                } else {
+                    this.showStorePanel();
+                }
+            } else {
+                this.showStorePanel();
             }
             this.updateAdminBadge();
         }
@@ -546,15 +561,17 @@ const ui = {
 };
 
 // ============================================
-// APP LOGIC - TANPA VERIFIKASI
+// APP LOGIC - FIXED LOGIN
 // ============================================
 const app = {
 
     async init() {
+        console.log('App initializing...');
         try {
             // Cek dan buat admin jika belum ada
             const adminExists = await FirebaseDB.getUser(ADMIN_CONFIG.username);
             if (!adminExists) {
+                console.log('Creating admin account...');
                 await FirebaseDB.saveUser(ADMIN_CONFIG.username, {
                     username: ADMIN_CONFIG.username,
                     password: ADMIN_CONFIG.password,
@@ -562,7 +579,9 @@ const app = {
                     coin: 999999,
                     createdAt: new Date().toISOString()
                 });
-                console.log('Admin account created');
+                console.log('Admin account created successfully');
+            } else {
+                console.log('Admin account exists');
             }
 
             ui.renderStore();
@@ -580,11 +599,13 @@ const app = {
                         RealtimeSync.init(dbUser.role, user.username);
                         ui.updateHeader();
                         ui.showPage('store');
+                        ui.toast(`Selamat datang kembali, ${Security.sanitize(user.username)}!`);
                     } else {
                         sessionStorage.removeItem('duskveil_session');
                         ui.showPage('auth');
                     }
-                } catch { 
+                } catch (e) {
+                    console.error('Session error:', e);
                     sessionStorage.removeItem('duskveil_session'); 
                     ui.showPage('auth'); 
                 }
@@ -594,7 +615,7 @@ const app = {
             this.initParticles();
         } catch(e) {
             console.error('App init error:', e);
-            alert('Error saat memuat aplikasi. Periksa koneksi internet dan coba refresh.');
+            ui.toast('Error: ' + e.message, 'error');
         }
     },
 
@@ -615,12 +636,7 @@ const app = {
 
     async handleLogin(e) {
         e.preventDefault();
-        
-        // Rate limiting untuk keamanan dasar
-        if (!Security.checkRateLimit('login', 10, 60000)) { 
-            ui.toast('⛔ Terlalu banyak percobaan. Tunggu 1 menit.', 'error'); 
-            return; 
-        }
+        console.log('Login attempt...');
         
         const username = document.getElementById('login-user').value.trim();
         const password = document.getElementById('login-pass').value;
@@ -632,14 +648,27 @@ const app = {
         
         // Cek user di database
         const dbUser = await FirebaseDB.getUser(username);
-        if (!dbUser || dbUser.password !== password) { 
-            ui.toast('Username atau password salah.', 'error'); 
+        console.log('User found:', dbUser ? 'yes' : 'no');
+        
+        if (!dbUser) { 
+            ui.toast('Username tidak ditemukan!', 'error'); 
+            return; 
+        }
+        
+        if (dbUser.password !== password) { 
+            ui.toast('Password salah!', 'error'); 
             return; 
         }
         
         // Buat session
         const token = Security.generateToken();
-        const userData = { ...dbUser, token, loginAt: new Date().toISOString() };
+        const userData = { 
+            username: dbUser.username,
+            role: dbUser.role,
+            coin: dbUser.coin || 0,
+            token: token, 
+            loginAt: new Date().toISOString() 
+        };
         sessionStorage.setItem('duskveil_session', JSON.stringify(userData));
         
         // Set session online
@@ -648,22 +677,19 @@ const app = {
         // Init realtime sync
         RealtimeSync.init(dbUser.role, username);
         
-        ui.toast(`Selamat datang, ${Security.sanitize(username)}!`);
+        ui.toast(`Selamat datang, ${Security.sanitize(username)}!`, 'success');
         ui.updateHeader();
         ui.showPage('store');
         
         // Clear form
         document.getElementById('login-user').value = '';
         document.getElementById('login-pass').value = '';
+        
+        console.log('Login successful!');
     },
 
     async handleRegister(e) {
         e.preventDefault();
-        
-        if (!Security.checkRateLimit('register', 5, 60000)) { 
-            ui.toast('⛔ Terlalu banyak percobaan.', 'error'); 
-            return; 
-        }
         
         const username = document.getElementById('reg-user').value.trim();
         const password = document.getElementById('reg-pass').value;
@@ -710,7 +736,7 @@ const app = {
             createdAt: new Date().toISOString() 
         });
         
-        ui.toast('Registrasi berhasil! Silakan login.');
+        ui.toast('Registrasi berhasil! Silakan login.', 'success');
         ui.switchTab('login');
         document.getElementById('login-user').value = username;
         
