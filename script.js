@@ -1,5 +1,5 @@
 // ============================================
-// DuskVeilSMP - SIMPLE STORAGE (Tanpa Firebase)
+// DuskVeilSMP - SIMPLE STORAGE (TANPA FIREBASE)
 // ============================================
 
 // Data Storage
@@ -7,7 +7,6 @@ let users = {};
 let commands = [];
 let purchases = [];
 let currentUser = null;
-let syncChannel = null;
 
 // ============================================
 // INIT DATA
@@ -51,74 +50,14 @@ function loadData() {
 
 function saveUsers() {
     localStorage.setItem('duskveil_users', JSON.stringify(users));
-    // Broadcast perubahan ke tab lain
-    broadcastChange({ type: 'users', data: users });
 }
 
 function saveCommands() {
     localStorage.setItem('duskveil_commands', JSON.stringify(commands));
-    broadcastChange({ type: 'commands', data: commands });
 }
 
 function savePurchases() {
     localStorage.setItem('duskveil_purchases', JSON.stringify(purchases));
-    broadcastChange({ type: 'purchases', data: purchases });
-}
-
-// ============================================
-// BROADCAST CHANNEL (Sinkron antar tab)
-// ============================================
-function initBroadcastChannel() {
-    if (window.BroadcastChannel) {
-        syncChannel = new BroadcastChannel('duskveil_sync');
-        syncChannel.onmessage = function(event) {
-            var data = event.data;
-            if (data.type === 'users') {
-                users = data.data;
-                if (currentUser && currentUser.role === 'admin') {
-                    ui.renderAdminTable();
-                    ui.updateStats();
-                }
-                // Update current user coin if needed
-                if (currentUser && users[currentUser.username]) {
-                    var newCoin = users[currentUser.username].coin;
-                    if (currentUser.coin !== newCoin) {
-                        currentUser.coin = newCoin;
-                        sessionStorage.setItem('duskveil_session', JSON.stringify(currentUser));
-                        ui.updateHeader();
-                        showToast('💰 Saldo diperbarui: ' + newCoin.toLocaleString() + ' koin', 'info');
-                    }
-                }
-            }
-            if (data.type === 'commands') {
-                commands = data.data;
-                if (currentUser && currentUser.role === 'admin') {
-                    ui.updateAdminBadge();
-                    var cmdPanel = document.getElementById('command-panel');
-                    if (cmdPanel && !cmdPanel.classList.contains('hidden')) {
-                        ui.renderCommandTable();
-                    }
-                    ui.updateStats();
-                }
-            }
-            if (data.type === 'purchases') {
-                purchases = data.data;
-                if (currentUser && currentUser.role === 'admin') {
-                    var purchasePanel = document.getElementById('purchase-panel');
-                    if (purchasePanel && !purchasePanel.classList.contains('hidden')) {
-                        ui.renderPurchaseLog();
-                    }
-                    ui.updateStats();
-                }
-            }
-        };
-    }
-}
-
-function broadcastChange(data) {
-    if (syncChannel) {
-        syncChannel.postMessage(data);
-    }
 }
 
 // ============================================
@@ -167,14 +106,14 @@ var ui = {
         var navbar = document.getElementById('navbar');
         var storeSection = document.getElementById('store-section');
         var adminDashboard = document.getElementById('admin-dashboard');
-        var cmdPanel = document.getElementById('command-panel');
-        var purchasePanel = document.getElementById('purchase-panel');
         
         if (page === 'auth') {
             if(authSection) authSection.classList.remove('hidden');
             if(navbar) navbar.classList.add('hidden');
             if(storeSection) storeSection.classList.add('hidden');
             if(adminDashboard) adminDashboard.classList.add('hidden');
+            var cmdPanel = document.getElementById('command-panel');
+            var purchasePanel = document.getElementById('purchase-panel');
             if(cmdPanel) cmdPanel.classList.add('hidden');
             if(purchasePanel) purchasePanel.classList.add('hidden');
         } else {
@@ -198,14 +137,14 @@ var ui = {
                 if (isAdmin) {
                     if(adminDashboard) adminDashboard.classList.remove('hidden');
                     if(storeSection) storeSection.classList.add('hidden');
-                    this.renderAdminTable();
-                    this.updateStats();
+                    ui.renderAdminTable();
+                    ui.updateStats();
                 } else {
                     if(storeSection) storeSection.classList.remove('hidden');
                     if(adminDashboard) adminDashboard.classList.add('hidden');
                 }
-                this.updateHeader();
-                this.updateAdminBadge();
+                ui.updateHeader();
+                ui.updateAdminBadge();
             }
         }
     },
@@ -490,11 +429,12 @@ var ui = {
 // ============================================
 var app = {
     init: function() {
+        // Hide loading overlay
+        var overlay = document.getElementById('loading-overlay');
+        if(overlay) overlay.style.display = 'none';
+        
         // Load all data
         loadData();
-        
-        // Setup broadcast channel untuk sync antar tab
-        initBroadcastChannel();
         
         // Render store
         ui.renderStore();
@@ -520,10 +460,6 @@ var app = {
         } else {
             ui.showPage('auth');
         }
-        
-        // Hide loading overlay
-        var overlay = document.getElementById('loading-overlay');
-        if(overlay) overlay.style.display = 'none';
         
         // Init particles
         this.initParticles();
@@ -685,10 +621,6 @@ var app = {
         sessionStorage.removeItem('duskveil_session');
         ui.showPage('auth');
         showToast('Anda telah keluar.');
-    },
-
-    getCurrentUser: function() {
-        return currentUser;
     },
 
     buyBook: function(itemName, price, cmd) {
